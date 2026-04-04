@@ -162,9 +162,23 @@
   font-size: 10px;
   margin-left: 2px;
 }
+.hdr-ai-badge.speaking {
+  color: #7c6fff;
+  background: rgba(124,111,255,0.15);
+  border-color: rgba(124,111,255,0.4);
+}
+.hdr-ai-badge.speaking .hdr-ai-dot {
+  background: #7c6fff;
+  box-shadow: 0 0 8px rgba(124,111,255,0.6);
+  animation: ai-dot-speak 0.5s ease-in-out infinite;
+}
 @keyframes ai-dot-pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.4; }
+}
+@keyframes ai-dot-speak {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.4); }
 }
 
 /* ---- Voice ---- */

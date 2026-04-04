@@ -38,17 +38,41 @@ class ContextBuilder {
     return prompt
   }
 
-  /** Canvas shapes only — no chat. Used by voice session. */
-  buildCanvasOnly() {
+  /** Canvas + recent voice conversation. Used by voice session. */
+  buildVoiceContext() {
     const shapes = this._getShapes()
-    if (shapes.length === 0) return 'Canvas is empty.'
+    let prompt = ''
 
-    let prompt = 'Canvas shapes:\n'
-    for (const s of shapes) {
-      const text = s.text ? ` "${s.text}"` : ''
-      prompt += `- [${s.id}] ${s.type}${text} at (${Math.round(s.x)},${Math.round(s.y)})\n`
+    if (shapes.length > 0) {
+      prompt += 'Canvas shapes:\n'
+      for (const s of shapes) {
+        const text = s.text ? ` "${s.text}"` : ''
+        prompt += `- [${s.id}] ${s.type}${text} at (${Math.round(s.x)},${Math.round(s.y)})\n`
+      }
+    } else {
+      prompt += 'Canvas is empty.\n'
     }
+
+    // Last 4 voice-channel entries as conversation memory
+    const voiceHistory = this._getRecentVoice(4)
+    if (voiceHistory.length > 0) {
+      prompt += '\nRecent voice conversation:\n'
+      for (const entry of voiceHistory) {
+        if (entry.type === 'transcript') {
+          prompt += `- ${entry.user || 'User'}: "${entry.text}"\n`
+        } else if (entry.type === 'response') {
+          prompt += `- AI Assistant: "${entry.text}"\n`
+        }
+      }
+    }
+
     return prompt
+  }
+
+  _getRecentVoice(count) {
+    const yVoice = this.doc.getArray('voice-channel')
+    const all = yVoice.toArray()
+    return all.slice(-count)
   }
 
   _getShapes() {

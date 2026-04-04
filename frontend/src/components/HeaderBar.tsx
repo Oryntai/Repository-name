@@ -21,6 +21,7 @@ interface HeaderBarProps {
   editor: Editor | null
   agentAwake: boolean
   isListening: boolean
+  isSpeaking: boolean
   onToggleAgent: () => void
 }
 
@@ -34,6 +35,7 @@ export function HeaderBar({
   editor,
   agentAwake,
   isListening,
+  isSpeaking,
   onToggleAgent,
 }: HeaderBarProps) {
   return (
@@ -84,13 +86,13 @@ export function HeaderBar({
           </div>
         )}
         <button
-          className={`hdr-ai-badge ${agentAwake ? 'awake' : 'sleeping'}`}
+          className={`hdr-ai-badge ${agentAwake ? 'awake' : 'sleeping'} ${isSpeaking ? 'speaking' : ''}`}
           onClick={onToggleAgent}
           title={agentAwake ? 'AI is listening — click or say "пока человек" to sleep' : 'AI is sleeping — click or say "эй человек" to wake'}
         >
           <span className="hdr-ai-dot" />
-          <span>AI {agentAwake ? 'on' : 'off'}</span>
-          {isListening && <span className="hdr-ai-ear" title="Voice commands active">🎤</span>}
+          <span>{isSpeaking ? 'AI speaking...' : agentAwake ? 'AI on' : 'AI off'}</span>
+          {isListening && <span className="hdr-ai-ear" title="Voice recognition active">🎤</span>}
         </button>
       </div>
 

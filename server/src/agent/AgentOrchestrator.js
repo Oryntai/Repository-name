@@ -83,8 +83,8 @@ class AgentOrchestrator {
   async _onVoiceTrigger(transcript, userName) {
     console.log(`[agent-voice] Processing transcript from ${userName}: "${transcript}"`)
 
-    // Build canvas context (shapes only, no chat — voice is separate)
-    const canvasContext = this.contextBuilder.buildCanvasOnly()
+    // Build canvas + last 4 voice messages as conversation context
+    const canvasContext = this.contextBuilder.buildVoiceContext()
     const responseText = await this.llmClient.callVoice(transcript, canvasContext)
 
     if (!responseText.trim()) {
