@@ -6,6 +6,7 @@ import { useCanvasSync } from './hooks/useCanvasSync'
 import { useChat } from './hooks/useChat'
 import { useVoiceChat } from './hooks/useVoiceChat'
 import { useRemoteCursors } from './hooks/useRemoteCursors'
+import { useVoiceCommands } from './hooks/useVoiceCommands'
 import { HeaderBar } from './components/HeaderBar'
 import { LeftSidebar } from './components/LeftSidebar'
 import { DotGrid } from './components/DotGrid'
@@ -27,6 +28,7 @@ export default function App() {
   useRemoteCursors(editor, provider)
   const chat = useChat(doc, userName)
   const voice = useVoiceChat(doc, provider)
+  const voiceCmd = useVoiceCommands(doc, voice.isActive)
 
   const handleMount = useCallback((e: Editor) => {
     setEditor(e)
@@ -44,6 +46,9 @@ export default function App() {
         status={status}
         voice={voice}
         editor={editor}
+        agentAwake={voiceCmd.agentAwake}
+        isListening={voiceCmd.isListening}
+        onToggleAgent={voiceCmd.agentAwake ? voiceCmd.manualSleep : voiceCmd.manualWake}
       />
       <div className="workspace">
         <LeftSidebar editor={editor} chat={chat} userName={userName} />

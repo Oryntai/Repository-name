@@ -19,6 +19,9 @@ interface HeaderBarProps {
   status: ConnectionStatus
   voice: VoiceState
   editor: Editor | null
+  agentAwake: boolean
+  isListening: boolean
+  onToggleAgent: () => void
 }
 
 export function HeaderBar({
@@ -29,6 +32,9 @@ export function HeaderBar({
   status,
   voice,
   editor,
+  agentAwake,
+  isListening,
+  onToggleAgent,
 }: HeaderBarProps) {
   return (
     <header className="hdr">
@@ -57,7 +63,7 @@ export function HeaderBar({
         </div>
       </div>
 
-      {/* Center: username + users */}
+      {/* Center: username + users + AI status */}
       <div className="hdr-center">
         <div className="hdr-user-group">
           <svg className="hdr-user-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
@@ -77,6 +83,15 @@ export function HeaderBar({
             {userCount} online
           </div>
         )}
+        <button
+          className={`hdr-ai-badge ${agentAwake ? 'awake' : 'sleeping'}`}
+          onClick={onToggleAgent}
+          title={agentAwake ? 'AI is listening — click or say "пока человек" to sleep' : 'AI is sleeping — click or say "эй человек" to wake'}
+        >
+          <span className="hdr-ai-dot" />
+          <span>AI {agentAwake ? 'on' : 'off'}</span>
+          {isListening && <span className="hdr-ai-ear" title="Voice commands active">🎤</span>}
+        </button>
       </div>
 
       {/* Right: voice + status */}

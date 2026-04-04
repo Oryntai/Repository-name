@@ -35,6 +35,13 @@
   align-self: flex-end;
   background: #2d4a6f;
 }
+.chat-msg.ai-msg {
+  background: #2a2050;
+  border-left: 3px solid #7c6fff;
+}
+.chat-msg.ai-msg .chat-user {
+  color: #7c6fff;
+}
 
 .chat-user {
   font-size: 11px;

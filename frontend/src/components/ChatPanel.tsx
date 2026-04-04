@@ -8,13 +8,27 @@ interface ChatPanelProps {
   userName: string
 }
 
+const aiSound = new Audio('/ai-trigger.mp3')
+aiSound.volume = 0.5
+
 export function ChatPanel({ messages, sendMessage, userName }: ChatPanelProps) {
   const [input, setInput] = useState('')
   const bottomRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const prevCountRef = useRef(messages.length)
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+
+    // Play sound when AI sends a new message
+    if (messages.length > prevCountRef.current) {
+      const newMsgs = messages.slice(prevCountRef.current)
+      if (newMsgs.some((m) => m.user === 'AI Assistant')) {
+        aiSound.currentTime = 0
+        aiSound.play().catch(() => {})
+      }
+    }
+    prevCountRef.current = messages.length
   }, [messages])
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -36,7 +50,7 @@ export function ChatPanel({ messages, sendMessage, userName }: ChatPanelProps) {
         {messages.map((msg) => (
           <div
             key={msg.id}
-            className={`chat-msg ${msg.user === userName ? 'own' : ''}`}
+            className={`chat-msg ${msg.user === userName ? 'own' : ''} ${msg.user === 'AI Assistant' ? 'ai-msg' : ''}`}
           >
             <span className="chat-user">{msg.user}</span>
             <span className="chat-text">{msg.text}</span>

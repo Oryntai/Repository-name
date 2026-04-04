@@ -1,6 +1,9 @@
+require('dotenv').config()
+
 const http = require('http')
 const WebSocket = require('ws')
-const { setupWSConnection } = require('y-websocket/bin/utils')
+const { setupWSConnection, getYDoc } = require('y-websocket/bin/utils')
+const { AgentOrchestrator } = require('./agent/AgentOrchestrator')
 
 const HOST = process.env.HOST || '0.0.0.0'
 const PORT = parseInt(process.env.PORT || '1234', 10)
@@ -19,4 +22,9 @@ wss.on('connection', (ws, req) => {
 
 server.listen(PORT, HOST, () => {
   console.log(`y-websocket server running on ws://${HOST}:${PORT}`)
+
+  // Bootstrap AI agent for the default room
+  const doc = getYDoc('main')
+  const agent = new AgentOrchestrator(doc)
+  console.log('[agent] AI Agent initialized for room: main')
 })

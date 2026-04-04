@@ -117,6 +117,56 @@
   background: #4caf50;
 }
 
+/* ---- AI Badge ---- */
+.hdr-ai-badge {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 12px;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.2s;
+}
+.hdr-ai-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  transition: background 0.2s, box-shadow 0.2s;
+}
+.hdr-ai-badge.awake {
+  color: #4caf50;
+  background: rgba(76,175,80,0.12);
+  border: 1px solid rgba(76,175,80,0.3);
+}
+.hdr-ai-badge.awake .hdr-ai-dot {
+  background: #4caf50;
+  box-shadow: 0 0 6px rgba(76,175,80,0.5);
+  animation: ai-dot-pulse 1.5s ease-in-out infinite;
+}
+.hdr-ai-badge.sleeping {
+  color: #666;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
+}
+.hdr-ai-badge.sleeping .hdr-ai-dot {
+  background: #555;
+}
+.hdr-ai-badge:hover {
+  filter: brightness(1.2);
+}
+.hdr-ai-ear {
+  font-size: 10px;
+  margin-left: 2px;
+}
+@keyframes ai-dot-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
 /* ---- Voice ---- */
 .hdr-voice {
   display: flex;
