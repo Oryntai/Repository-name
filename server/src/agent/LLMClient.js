@@ -15,7 +15,8 @@ Rules:
 - Don't repeat ideas already on the canvas
 - When responding to a direct mention, address the user's request specifically
 - You can use multiple tools in a single response if needed
-- Keep chat messages brief and natural`
+- Keep chat messages brief and natural
+- IMPORTANT: All content you create MUST be placed inside the canvas page boundary. Never place shapes outside the visible page area.`
 
 const TOOLS = [
   {
@@ -187,7 +188,8 @@ Rules for "speak" text:
 - Natural, conversational
 - Same language as the user (Russian or English)
 - No markdown, no lists — plain spoken text
-- If you see drawings on the canvas, describe what you actually see`
+- If you see drawings on the canvas, describe what you actually see
+- IMPORTANT: All shapes you create MUST be placed inside the canvas page boundary. Never place anything outside the visible page area.`
 
     // Build user message content (text + optional image)
     const userContent = []

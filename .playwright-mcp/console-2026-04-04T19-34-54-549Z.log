@@ -1,0 +1,105 @@
+[     235ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://localhost:5173/node_modules/.vite/deps/chunk-KDCVS43I.js?v=93e48dcd:21608
+[     336ms] [WARNING] WebSocket connection to 'ws://localhost:5173/ws/main' failed: WebSocket is closed before the connection is established. @ http://localhost:5173/node_modules/.vite/deps/y-websocket.js?v=93e48dcd:411
+[    1323ms] [WARNING] Language ru: missing messages for keys:
+action.export-all-as-json.short
+action.export-all-as-json
+action.export-all-as-png.short
+action.export-all-as-png
+action.export-all-as-svg.short
+action.export-all-as-svg
+action.fit-frame-to-content
+action.fork-project-on-tldraw
+action.open-cursor-chat
+action.paste-error-title
+action.paste-error-description
+action.remove-frame
+action.rename
+action.toggle-paste-at-cursor.menu
+action.toggle-paste-at-cursor
+action.toggle-wrap-mode.menu
+action.toggle-wrap-mode
+action.toggle-reduce-motion.menu
+action.toggle-reduce-motion
+action.toggle-edge-scrolling.menu
+action.toggle-edge-scrolling
+action.toggle-dynamic-size-mode.menu
+action.toggle-dynamic-size-mode
+action.flatten-to-image
+assets.files.size-too-big
+assets.files.type-not-allowed
+assets.files.upload-failed
+assets.url.failed
+theme.dark
+theme.light
+theme.system
+color-style.white
+document.default-name
+fill-style.fill
+verticalAlign-style.start
+verticalAlign-style.middle
+verticalAlign-style.end
+menu.theme
+menu.help
+context-menu.edit
+context-menu.export-all-as
+share-menu.creating-project
+share-menu.copied
+help-menu.docs
+shortcuts-dialog.collaboration @ http://localhost:5173/node_modules/.vite/deps/tldraw.js?v=93e48dcd:34138
+[    1326ms] [WARNING] Language ru: missing messages for keys:
+action.export-all-as-json.short
+action.export-all-as-json
+action.export-all-as-png.short
+action.export-all-as-png
+action.export-all-as-svg.short
+action.export-all-as-svg
+action.fit-frame-to-content
+action.fork-project-on-tldraw
+action.open-cursor-chat
+action.paste-error-title
+action.paste-error-description
+action.remove-frame
+action.rename
+action.toggle-paste-at-cursor.menu
+action.toggle-paste-at-cursor
+action.toggle-wrap-mode.menu
+action.toggle-wrap-mode
+action.toggle-reduce-motion.menu
+action.toggle-reduce-motion
+action.toggle-edge-scrolling.menu
+action.toggle-edge-scrolling
+action.toggle-dynamic-size-mode.menu
+action.toggle-dynamic-size-mode
+action.flatten-to-image
+assets.files.size-too-big
+assets.files.type-not-allowed
+assets.files.upload-failed
+assets.url.failed
+theme.dark
+theme.light
+theme.system
+color-style.white
+document.default-name
+fill-style.fill
+verticalAlign-style.start
+verticalAlign-style.middle
+verticalAlign-style.end
+menu.theme
+menu.help
+context-menu.edit
+context-menu.export-all-as
+share-menu.creating-project
+share-menu.copied
+help-menu.docs
+shortcuts-dialog.collaboration @ http://localhost:5173/node_modules/.vite/deps/tldraw.js?v=93e48dcd:34138
+[    1385ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:5173/favicon.ico:0
+[   28401ms] [ERROR] WebSocket connection to 'ws://localhost:5173/ws/main' failed: Connection closed before receiving a handshake response @ http://localhost:5173/node_modules/.vite/deps/y-websocket.js?v=93e48dcd:441
+[   28607ms] [ERROR] WebSocket connection to 'ws://localhost:5173/ws/main' failed: Connection closed before receiving a handshake response @ http://localhost:5173/node_modules/.vite/deps/y-websocket.js?v=93e48dcd:441
+[   29013ms] [ERROR] WebSocket connection to 'ws://localhost:5173/ws/main' failed: Connection closed before receiving a handshake response @ http://localhost:5173/node_modules/.vite/deps/y-websocket.js?v=93e48dcd:441
+[   29817ms] [ERROR] WebSocket connection to 'ws://localhost:5173/ws/main' failed: Connection closed before receiving a handshake response @ http://localhost:5173/node_modules/.vite/deps/y-websocket.js?v=93e48dcd:441
+[   37761ms] [ERROR] WebSocket connection to 'ws://localhost:5173/ws/main' failed: Connection closed before receiving a handshake response @ http://localhost:5173/node_modules/.vite/deps/y-websocket.js?v=93e48dcd:441
+[   37968ms] [ERROR] WebSocket connection to 'ws://localhost:5173/ws/main' failed: Connection closed before receiving a handshake response @ http://localhost:5173/node_modules/.vite/deps/y-websocket.js?v=93e48dcd:441
+[   38378ms] [ERROR] WebSocket connection to 'ws://localhost:5173/ws/main' failed: Connection closed before receiving a handshake response @ http://localhost:5173/node_modules/.vite/deps/y-websocket.js?v=93e48dcd:441
+[   39184ms] [ERROR] WebSocket connection to 'ws://localhost:5173/ws/main' failed: Connection closed before receiving a handshake response @ http://localhost:5173/node_modules/.vite/deps/y-websocket.js?v=93e48dcd:441
+[   40790ms] [ERROR] WebSocket connection to 'ws://localhost:5173/ws/main' failed: Connection closed before receiving a handshake response @ http://localhost:5173/node_modules/.vite/deps/y-websocket.js?v=93e48dcd:441
+[   43301ms] [ERROR] WebSocket connection to 'ws://localhost:5173/ws/main' failed: Connection closed before receiving a handshake response @ http://localhost:5173/node_modules/.vite/deps/y-websocket.js?v=93e48dcd:441

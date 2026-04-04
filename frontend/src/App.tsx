@@ -8,10 +8,12 @@ import { useVoiceChat } from './hooks/useVoiceChat'
 import { useRemoteCursors } from './hooks/useRemoteCursors'
 import { useVoiceCommands } from './hooks/useVoiceCommands'
 import { usePageSizeProvider, PageSizeContext } from './hooks/usePageSize'
+import { useClampToBounds } from './hooks/useClampToBounds'
 import { HeaderBar } from './components/HeaderBar'
 import { LeftSidebar } from './components/LeftSidebar'
 import { DotGrid } from './components/DotGrid'
 import { CanvasToolbar } from './components/CanvasToolbar'
+import { PageMask } from './components/PageMask'
 import './App.css'
 
 function getRoomId(): string {
@@ -31,14 +33,18 @@ export default function App() {
   const voice = useVoiceChat(doc, provider)
   const voiceCmd = useVoiceCommands(doc, voice.isActive, userName, editor)
   const pageSize = usePageSizeProvider(doc)
+  useClampToBounds(editor)
 
   const handleMount = useCallback((e: Editor) => {
     setEditor(e)
     e.updateInstanceState({ isGridMode: true })
     e.user.updateUserPreferences({ isSnapMode: true })
 
-    // Center camera on the working area
-    e.setCamera({ x: 0, y: 0, z: 1 })
+    // Fit the page boundary in the viewport with some padding
+    const vw = window.innerWidth - 64
+    const vh = window.innerHeight - 50
+    const zoom = Math.min(vw / 1680, vh / 960) * 0.95
+    e.setCamera({ x: 40 / zoom, y: 20 / zoom, z: zoom })
   }, [])
 
   return (
@@ -77,6 +83,7 @@ export default function App() {
             }}
           />
           {editor && <CanvasToolbar editor={editor} />}
+          {editor && <PageMask editor={editor} />}
         </div>
       </div>
     </div>

@@ -1,0 +1,84 @@
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - generic [ref=e5]:
+      - generic [ref=e6]:
+        - img [ref=e7]
+        - generic [ref=e11]: BrainCanvas
+      - generic [ref=e13]: main
+      - generic [ref=e15]:
+        - button "Undo" [ref=e16] [cursor=pointer]:
+          - img [ref=e17]
+        - button "Redo" [ref=e20] [cursor=pointer]:
+          - img [ref=e21]
+    - generic [ref=e24]:
+      - generic [ref=e25]:
+        - img [ref=e26]
+        - textbox [ref=e29]: User-8bv
+      - generic [ref=e30]: 2 online
+      - button "AI off" [ref=e32] [cursor=pointer]:
+        - generic [ref=e34]: AI off
+    - generic [ref=e35]:
+      - button "Voice" [ref=e37] [cursor=pointer]:
+        - img [ref=e38]
+        - generic [ref=e41]: Voice
+      - generic [ref=e45]: Connected
+  - generic [ref=e46]:
+    - navigation [ref=e48]:
+      - button "Elements" [ref=e49] [cursor=pointer]:
+        - img [ref=e50]
+        - generic [ref=e55]: Elements
+      - button "Draw" [ref=e56] [cursor=pointer]:
+        - img [ref=e57]
+        - generic [ref=e59]: Draw
+      - button "Text" [ref=e60] [cursor=pointer]:
+        - img [ref=e61]
+        - generic [ref=e63]: Text
+      - button "Chat" [ref=e64] [cursor=pointer]:
+        - img [ref=e65]
+        - generic [ref=e67]: Chat
+    - generic [ref=e68]:
+      - generic [active] [ref=e69]:
+        - generic [ref=e70]:
+          - img
+          - img
+          - generic [ref=e76]:
+            - generic:
+              - img
+            - generic:
+              - img
+            - generic:
+              - img
+            - generic:
+              - img
+            - generic:
+              - img
+            - generic:
+              - img
+            - generic:
+              - img
+        - radiogroup [ref=e77]:
+          - generic [ref=e78]:
+            - radio "tool.select" [checked] [ref=e79] [cursor=pointer]
+            - radio "tool.hand" [ref=e81] [cursor=pointer]
+            - radio "tool.draw" [ref=e83] [cursor=pointer]
+            - radio "tool.eraser" [ref=e85] [cursor=pointer]
+            - radio "tool.arrow" [ref=e87] [cursor=pointer]
+            - radio "tool.text" [ref=e89] [cursor=pointer]
+            - radio "tool.note" [ref=e91] [cursor=pointer]
+            - radio "tool.asset" [ref=e93] [cursor=pointer]
+            - radio "tool.rectangle" [ref=e95] [cursor=pointer]
+          - button "Подробнее" [ref=e97] [cursor=pointer]
+      - generic [ref=e99]:
+        - button [ref=e100] [cursor=pointer]
+        - button [ref=e101] [cursor=pointer]
+        - button [ref=e102] [cursor=pointer]
+        - button [ref=e103] [cursor=pointer]
+        - button [ref=e104] [cursor=pointer]
+        - button [ref=e105] [cursor=pointer]
+        - button [ref=e106] [cursor=pointer]
+        - button [ref=e107] [cursor=pointer]
+        - slider [ref=e109] [cursor=pointer]: "1"
+      - generic [ref=e110]:
+        - button "−" [ref=e111] [cursor=pointer]
+        - generic [ref=e112] [cursor=pointer]: 62%
+        - button "+" [ref=e113] [cursor=pointer]
