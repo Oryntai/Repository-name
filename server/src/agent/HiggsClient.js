@@ -10,7 +10,6 @@ class HiggsClient {
     }
 
     this.enabled = true
-    // Lazy-init to avoid top-level import issues
     this._initialized = false
     this._keyId = keyId
     this._keySecret = keySecret
@@ -32,25 +31,26 @@ class HiggsClient {
 
     try {
       const result = await this.higgsfield.subscribe(
-        'flux-pro/kontext/max/text-to-image',
+        'higgsfield-ai/soul/standard',
         {
           input: {
             prompt,
             aspect_ratio: '1:1',
+            resolution: '1080p',
           },
           withPolling: true,
         }
       )
 
-      // Extract image URL from response
+      console.log(`[higgs] Status: ${result.status}`)
+
       if (result.status === 'completed') {
-        // V2 response format — try multiple known paths
+        // Try all known response paths (SDK format + raw API format)
         const url =
-          result.images?.[0]?.url ||
+          result.images?.[0]?.url ||           // Raw API: { images: [{ url }] }
+          result.jobs?.[0]?.results?.raw?.url || // SDK JobSet: { jobs: [{ results: { raw: { url } } }] }
           result.result?.url ||
           result.result?.images?.[0]?.url ||
-          result.output?.url ||
-          result.output?.images?.[0]?.url ||
           null
 
         if (url) {
@@ -58,8 +58,8 @@ class HiggsClient {
           return url
         }
 
-        // If we can't find the URL in known paths, log the response for debugging
-        console.warn('[higgs] Completed but URL not found. Response:', JSON.stringify(result).substring(0, 500))
+        console.warn('[higgs] Completed but URL not found. Response keys:', Object.keys(result))
+        console.warn('[higgs] Full response:', JSON.stringify(result).substring(0, 500))
         return null
       }
 

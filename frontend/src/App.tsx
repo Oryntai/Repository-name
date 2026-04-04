@@ -35,15 +35,17 @@ export default function App() {
     e.updateInstanceState({ isGridMode: true })
     e.user.updateUserPreferences({ isSnapMode: true })
 
-    // Fit camera to show the 1600x900 canvas boundary with padding
-    const pad = 40
-    const vw = window.innerWidth - 64
-    const vh = window.innerHeight - 50
-    const zoom = Math.min(vw / (1600 + pad * 2), vh / (900 + pad * 2), 1)
-    e.setCamera({
-      x: -(-pad + (1600 + pad * 2 - vw / zoom) / 2),
-      y: -(-pad + (900 + pad * 2 - vh / zoom) / 2),
-      z: zoom,
+    // Fit camera to show the 1600x900 canvas boundary
+    requestAnimationFrame(() => {
+      try {
+        const vw = Math.max(window.innerWidth - 64, 400)
+        const vh = Math.max(window.innerHeight - 50, 300)
+        const zoom = Math.min(vw / 1700, vh / 980, 1)
+        e.setCamera({ x: 50 / zoom, y: 50 / zoom, z: zoom })
+      } catch {
+        // Fallback: just reset camera
+        e.setCamera({ x: 0, y: 0, z: 0.8 })
+      }
     })
   }, [])
 
