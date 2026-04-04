@@ -43,17 +43,59 @@ export function useVoiceCommands(
   editor: Editor | null,
 ) {
   const [phase, setPhase] = useState<Phase>('WAITING')
+  const [sharedPhase, setSharedPhase] = useState<Phase>('WAITING')
+  const sharedPhaseRef = useRef<Phase>('WAITING')
+  const [sharedTriggeredBy, setSharedTriggeredBy] = useState('')
   const [isSpeaking, setIsSpeaking] = useState(false)
   const phaseRef = useRef<Phase>('WAITING')
   const recognitionRef = useRef<any>(null)
   const restartTimerRef = useRef<ReturnType<typeof setTimeout>>()
   const processingTimeoutRef = useRef<ReturnType<typeof setTimeout>>()
+  const consecutiveFailsRef = useRef(0)
   const processedRef = useRef<Set<number>>(new Set())
   const editorRef = useRef(editor)
   editorRef.current = editor
 
   // Sync ref with state
   useEffect(() => { phaseRef.current = phase }, [phase])
+
+  // --- Broadcast and observe shared AI status via Yjs ---
+  const broadcastPhase = useCallback((newPhase: Phase) => {
+    if (!doc) return
+    const yStatus = doc.getMap('ai-status')
+    yStatus.set('phase', newPhase)
+    yStatus.set('triggeredBy', newPhase !== 'WAITING' ? userName : '')
+    yStatus.set('timestamp', Date.now())
+  }, [doc, userName])
+
+  useEffect(() => {
+    if (!doc) return
+    const yStatus = doc.getMap('ai-status')
+
+    let prevPhase: Phase = 'WAITING'
+
+    const onUpdate = () => {
+      const p = (yStatus.get('phase') as Phase) || 'WAITING'
+      const by = (yStatus.get('triggeredBy') as string) || ''
+
+      // Play trigger sound for ALL users when AI wakes up
+      if (p === 'TRIGGERED' && prevPhase === 'WAITING') {
+        triggerSound.currentTime = 0
+        triggerSound.play().catch(() => {})
+      }
+
+      prevPhase = p
+      setSharedPhase(p)
+      sharedPhaseRef.current = p
+      setSharedTriggeredBy(by)
+    }
+
+    // Read initial (don't play sound)
+    prevPhase = (yStatus.get('phase') as Phase) || 'WAITING'
+    onUpdate()
+    yStatus.observe(onUpdate)
+    return () => yStatus.unobserve(onUpdate)
+  }, [doc])
 
   // --- Watch voice-channel for AI responses → TTS ---
   useEffect(() => {
@@ -67,6 +109,11 @@ export function useVoiceCommands(
           if (entry.type !== 'response') continue
           if (processedRef.current.has(entry.timestamp)) continue
           processedRef.current.add(entry.timestamp)
+          // Prevent processedRef from growing forever
+          if (processedRef.current.size > 100) {
+            const arr = [...processedRef.current]
+            processedRef.current = new Set(arr.slice(-50))
+          }
           speakText(entry.text)
         }
       }
@@ -105,7 +152,10 @@ export function useVoiceCommands(
     recognition.lang = 'ru-RU'
     recognition.maxAlternatives = 3
 
-    recognition.onstart = () => console.log('[voice] Keyword spotter active')
+    recognition.onstart = () => {
+      console.log('[voice] Keyword spotter active')
+      consecutiveFailsRef.current = 0
+    }
 
     recognition.onresult = (event: any) => {
       for (let i = event.resultIndex; i < event.results.length; i++) {
@@ -127,16 +177,34 @@ export function useVoiceCommands(
     recognition.onerror = (event: any) => {
       if (event.error === 'no-speech' || event.error === 'aborted') return
       console.warn(`[voice] Error: ${event.error}`)
+      consecutiveFailsRef.current++
     }
 
     recognition.onend = () => {
       // Auto-restart (Chrome stops after ~60s silence)
-      if (recognitionRef.current) {
+      if (!recognitionRef.current) return
+
+      const fails = consecutiveFailsRef.current
+      // Back off: 300ms → 600ms → 1200ms → ... up to 5s
+      const delay = Math.min(300 * Math.pow(2, fails), 5000)
+
+      if (fails >= 5) {
+        // Too many consecutive failures — recreate recognition from scratch
+        console.warn('[voice] Too many failures, recreating SpeechRecognition')
+        const doc = yjsDoc
+        recognitionRef.current = null
         clearTimeout(restartTimerRef.current)
         restartTimerRef.current = setTimeout(() => {
-          try { recognitionRef.current?.start() } catch { /* ok */ }
-        }, 300)
+          consecutiveFailsRef.current = 0
+          startRecognition(doc)
+        }, 2000)
+        return
       }
+
+      clearTimeout(restartTimerRef.current)
+      restartTimerRef.current = setTimeout(() => {
+        try { recognitionRef.current?.start() } catch { /* ok */ }
+      }, delay)
     }
 
     try {
@@ -172,11 +240,16 @@ export function useVoiceCommands(
     if (current === 'WAITING') {
       // Only check for wake word — ignore everything else (zero tokens)
       if (alternatives.some((t) => WAKE_PHRASES.some((p) => t.includes(p)))) {
+        // Block if AI is already busy (another user triggered it)
+        if (sharedPhaseRef.current !== 'WAITING') {
+          console.log('[voice] Wake word ignored — AI is busy for another user')
+          return
+        }
         console.log('[voice] >>> WAKE WORD DETECTED')
-        triggerSound.currentTime = 0
-        triggerSound.play().catch(() => {})
+        // Sound is played by all clients via the shared ai-status observer
         setPhase('TRIGGERED')
         phaseRef.current = 'TRIGGERED'
+        broadcastPhase('TRIGGERED')
       }
       // Everything else is silently ignored — no tokens spent
       return
@@ -189,6 +262,7 @@ export function useVoiceCommands(
       console.log(`[voice] Command captured: "${rawPrimary}"`)
       setPhase('PROCESSING')
       phaseRef.current = 'PROCESSING'
+      broadcastPhase('PROCESSING')
 
       // Safety: if no response within 30s, reset to WAITING
       clearTimeout(processingTimeoutRef.current)
@@ -279,7 +353,11 @@ export function useVoiceCommands(
   // ========== TTS ==========
 
   function speakText(text: string) {
-    if (!text.trim() || !window.speechSynthesis) return
+    if (!text.trim() || !window.speechSynthesis) {
+      // No text to speak — go back to WAITING immediately
+      if (phaseRef.current === 'PROCESSING') goToWaiting()
+      return
+    }
 
     window.speechSynthesis.cancel()
 
@@ -294,16 +372,31 @@ export function useVoiceCommands(
     )
     if (preferred) utterance.voice = preferred
 
+    // Safety: Chrome sometimes never fires onend (especially for Russian TTS).
+    // Use a timeout based on estimated speech duration as a fallback.
+    let ttsSettled = false
+    const estimatedMs = Math.max(5000, text.length * 150) // ~150ms per char (Russian TTS is slow)
+    const ttsSafetyTimer = setTimeout(() => {
+      if (!ttsSettled) {
+        console.warn('[voice] TTS safety timeout — forcing reset')
+        ttsSettled = true
+        setIsSpeaking(false)
+        window.speechSynthesis.cancel()
+        goToWaiting()
+      }
+    }, estimatedMs)
+
+    const settle = () => {
+      if (ttsSettled) return
+      ttsSettled = true
+      clearTimeout(ttsSafetyTimer)
+      setIsSpeaking(false)
+      goToWaiting()
+    }
+
     utterance.onstart = () => setIsSpeaking(true)
-    utterance.onend = () => {
-      setIsSpeaking(false)
-      // After TTS finishes → back to WAITING
-      goToWaiting()
-    }
-    utterance.onerror = () => {
-      setIsSpeaking(false)
-      goToWaiting()
-    }
+    utterance.onend = () => settle()
+    utterance.onerror = () => settle()
 
     window.speechSynthesis.speak(utterance)
   }
@@ -312,24 +405,30 @@ export function useVoiceCommands(
     clearTimeout(processingTimeoutRef.current)
     setPhase('WAITING')
     phaseRef.current = 'WAITING'
+    broadcastPhase('WAITING')
   }
 
   // ========== MANUAL CONTROLS (for chat / button) ==========
 
   const manualWake = useCallback(() => {
     if (!doc) return
-    triggerSound.currentTime = 0
-    triggerSound.play().catch(() => {})
+    // Block if AI is already busy
+    const yStatus = doc.getMap('ai-status')
+    if (yStatus.get('phase') && yStatus.get('phase') !== 'WAITING') return
+    // Sound is played by all clients via the shared ai-status observer
     setPhase('TRIGGERED')
     phaseRef.current = 'TRIGGERED'
-  }, [doc])
+    broadcastPhase('TRIGGERED')
+  }, [doc, broadcastPhase])
 
   const manualSleep = useCallback(() => {
     goToWaiting()
   }, [])
 
-  const agentAwake = phase !== 'WAITING'
+  // Use shared phase for display so ALL users see the same AI status
+  const displayPhase = sharedPhase
+  const agentAwake = displayPhase !== 'WAITING'
   const isListening = recognitionRef.current !== null
 
-  return { phase, agentAwake, isListening, isSpeaking, manualWake, manualSleep }
+  return { phase: displayPhase, agentAwake, isListening, isSpeaking, manualWake, manualSleep, triggeredBy: sharedTriggeredBy }
 }

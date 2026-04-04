@@ -23,6 +23,7 @@ class AgentOrchestrator {
     })
 
     this._setupPresence()
+    this._setupCleanup()
 
     console.log(`[agent] ${AGENT_NAME} initialized — chat + voice sessions ready`)
   }
@@ -107,6 +108,32 @@ class AgentOrchestrator {
     }
   }
 
+  // Trim voice-channel and chat arrays to prevent unbounded growth
+  _setupCleanup() {
+    const MAX_VOICE_ENTRIES = 20
+    const MAX_CHAT_ENTRIES = 50
+
+    this._cleanupInterval = setInterval(() => {
+      try {
+        const yVoice = this.doc.getArray('voice-channel')
+        if (yVoice.length > MAX_VOICE_ENTRIES) {
+          const toRemove = yVoice.length - MAX_VOICE_ENTRIES
+          this.doc.transact(() => { yVoice.delete(0, toRemove) })
+          console.log(`[agent] Trimmed ${toRemove} old voice-channel entries`)
+        }
+
+        const yChat = this.doc.getArray('chat')
+        if (yChat.length > MAX_CHAT_ENTRIES) {
+          const toRemove = yChat.length - MAX_CHAT_ENTRIES
+          this.doc.transact(() => { yChat.delete(0, toRemove) })
+          console.log(`[agent] Trimmed ${toRemove} old chat entries`)
+        }
+      } catch (err) {
+        console.warn('[agent] Cleanup error:', err.message)
+      }
+    }, 30000) // Every 30 seconds
+  }
+
   _moveCursorNear(actions) {
     if (!this.doc.awareness) return
 
@@ -132,6 +159,7 @@ class AgentOrchestrator {
 
   destroy() {
     clearInterval(this._presenceInterval)
+    clearInterval(this._cleanupInterval)
     this.triggerManager.destroy()
   }
 }

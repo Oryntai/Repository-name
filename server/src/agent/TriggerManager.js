@@ -5,17 +5,10 @@ const AGENT_NAME = 'AI Assistant'
 
 const WAKE_WORDS = ['эй человек', 'эй, человек', 'hey human', '@ai']
 
-const STATE = { IDLE: 'idle', CALLING: 'calling', COOLDOWN: 'cooldown' }
 
 /**
- * Two fully independent channels:
- *
- * CHAT — fires only when a message contains a wake word. One-shot per message.
- *        Response goes to chat only.
- *
- * VOICE — fires for every transcript in voice-channel.
- *         The frontend state machine gates what gets sent (wake word → listen → send).
- *         Response goes to voice-channel only (TTS).
+ * Single global lock: only one request (chat OR voice) can be processed at a time.
+ * The second caller is ignored — they must re-trigger after the first completes.
  */
 class TriggerManager {
   constructor(doc, { onChatTrigger, onVoiceTrigger }) {
@@ -23,12 +16,13 @@ class TriggerManager {
     this.onChatTrigger = onChatTrigger
     this.onVoiceTrigger = onVoiceTrigger
 
-    this.chatState = STATE.IDLE
-    this.voiceState = STATE.IDLE
-    this.chatCooldownTimer = null
-    this.voiceCooldownTimer = null
-    this.chatStuckTimer = null
-    this.voiceStuckTimer = null
+    // Global lock — only one request at a time across both channels
+    this.busy = false
+    this.cooldownTimer = null
+    this.stuckTimer = null
+
+    // Track init time — ignore entries that existed before agent started
+    this._initTime = Date.now()
 
     this._observeChat()
     this._observeVoiceChannel()
@@ -53,6 +47,9 @@ class TriggerManager {
   }
 
   _processChatMessage(msg) {
+    // Skip messages that existed before agent started (initial Yjs sync)
+    if (msg.timestamp && msg.timestamp < this._initTime) return
+
     const textLower = msg.text.toLowerCase()
 
     // Chat only responds when a wake word is in the message
@@ -63,36 +60,19 @@ class TriggerManager {
   }
 
   _fireChatImmediate(reason, text) {
-    if (this.chatState === STATE.CALLING) {
-      console.log('[trigger-chat] Skipping — already processing')
+    if (this.busy) {
+      console.log('[trigger-chat] Skipping — agent is busy')
       return
     }
 
-    clearTimeout(this.chatCooldownTimer)
-    this.chatState = STATE.CALLING
-
-    this.chatStuckTimer = setTimeout(() => {
-      if (this.chatState === STATE.CALLING) {
-        console.warn('[trigger-chat] Force-reset from stuck CALLING')
-        this.chatState = STATE.IDLE
-      }
-    }, STUCK_TIMEOUT_MS)
-
+    this._lock()
     console.log(`[trigger-chat] Firing: ${reason}`)
 
     this.onChatTrigger(reason, text)
-      .then(() => {
-        clearTimeout(this.chatStuckTimer)
-        this.chatState = STATE.COOLDOWN
-        this.chatCooldownTimer = setTimeout(() => {
-          this.chatState = STATE.IDLE
-          console.log('[trigger-chat] Cooldown ended')
-        }, COOLDOWN_MS)
-      })
+      .then(() => this._unlock(COOLDOWN_MS))
       .catch((err) => {
-        clearTimeout(this.chatStuckTimer)
         console.error('[trigger-chat] Error:', err.message)
-        this.chatState = STATE.IDLE
+        this._unlock(0)
       })
   }
 
@@ -108,6 +88,8 @@ class TriggerManager {
         if (!change.insert) continue
         for (const entry of change.insert) {
           if (entry.type !== 'transcript') continue
+          // Skip old transcripts from before agent started
+          if (entry.timestamp && entry.timestamp < this._initTime) continue
           this._fireVoiceImmediate(entry)
         }
       }
@@ -115,44 +97,49 @@ class TriggerManager {
   }
 
   _fireVoiceImmediate(entry) {
-    if (this.voiceState === STATE.CALLING) {
-      console.log('[trigger-voice] Skipping — already processing')
+    if (this.busy) {
+      console.log('[trigger-voice] Skipping — agent is busy')
       return
     }
 
-    clearTimeout(this.voiceCooldownTimer)
-    this.voiceState = STATE.CALLING
-
-    this.voiceStuckTimer = setTimeout(() => {
-      if (this.voiceState === STATE.CALLING) {
-        console.warn('[trigger-voice] Force-reset from stuck CALLING')
-        this.voiceState = STATE.IDLE
-      }
-    }, STUCK_TIMEOUT_MS)
-
+    this._lock()
     console.log(`[trigger-voice] Firing for transcript: "${entry.text}"`)
 
     this.onVoiceTrigger(entry.text, entry.user)
-      .then(() => {
-        clearTimeout(this.voiceStuckTimer)
-        this.voiceState = STATE.COOLDOWN
-        this.voiceCooldownTimer = setTimeout(() => {
-          this.voiceState = STATE.IDLE
-          console.log('[trigger-voice] Cooldown ended')
-        }, VOICE_COOLDOWN_MS)
-      })
+      .then(() => this._unlock(VOICE_COOLDOWN_MS))
       .catch((err) => {
-        clearTimeout(this.voiceStuckTimer)
         console.error('[trigger-voice] Error:', err.message)
-        this.voiceState = STATE.IDLE
+        this._unlock(0)
       })
   }
 
+  _lock() {
+    this.busy = true
+    clearTimeout(this.cooldownTimer)
+    clearTimeout(this.stuckTimer)
+    this.stuckTimer = setTimeout(() => {
+      if (this.busy) {
+        console.warn('[trigger] Force-reset from stuck busy state')
+        this.busy = false
+      }
+    }, STUCK_TIMEOUT_MS)
+  }
+
+  _unlock(cooldownMs) {
+    clearTimeout(this.stuckTimer)
+    if (cooldownMs > 0) {
+      this.cooldownTimer = setTimeout(() => {
+        this.busy = false
+        console.log('[trigger] Cooldown ended — ready')
+      }, cooldownMs)
+    } else {
+      this.busy = false
+    }
+  }
+
   destroy() {
-    clearTimeout(this.chatCooldownTimer)
-    clearTimeout(this.voiceCooldownTimer)
-    clearTimeout(this.chatStuckTimer)
-    clearTimeout(this.voiceStuckTimer)
+    clearTimeout(this.cooldownTimer)
+    clearTimeout(this.stuckTimer)
   }
 }
 
