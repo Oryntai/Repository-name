@@ -1,0 +1,20 @@
+.resize-handles {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 50;
+}
+
+.resize-handle {
+  position: absolute;
+  pointer-events: all;
+  background: #4a90d9;
+  border: 1px solid #fff;
+  border-radius: 2px;
+  opacity: 0.7;
+  transition: opacity 0.15s;
+}
+.resize-handle:hover {
+  opacity: 1;
+  background: #2b6cb0;
+}

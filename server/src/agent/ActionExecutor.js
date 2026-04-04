@@ -1,9 +1,7 @@
 const AGENT_NAME = 'AI Assistant'
 
-// Must match AgentOrchestrator CANVAS_BOUNDS
-const BOUNDS = { x: 0, y: 0, w: 1600, h: 900 }
-const SHAPE_W = 200 // approximate note width
-const SHAPE_H = 200 // approximate note height
+const SHAPE_W = 200
+const SHAPE_H = 200
 
 // Generate a unique tldraw-compatible ID
 function makeId(prefix) {
@@ -294,18 +292,30 @@ class ActionExecutor {
       return this._clamp(userShape.x + 230, userShape.y)
     }
 
-    // 4. Fallback: random position within bounds
+    // 4. Fallback: random position within page bounds
+    const b = this._getPageBounds()
     return this._clamp(
-      BOUNDS.x + 100 + Math.floor(Math.random() * (BOUNDS.w - SHAPE_W - 200)),
-      BOUNDS.y + 100 + Math.floor(Math.random() * (BOUNDS.h - SHAPE_H - 200)),
+      b.x + 100 + Math.floor(Math.random() * (b.w - SHAPE_W - 200)),
+      b.y + 100 + Math.floor(Math.random() * (b.h - SHAPE_H - 200)),
     )
   }
 
-  /** Clamp position to stay within canvas boundary */
+  /** Clamp position to stay within canvas page boundary */
   _clamp(x, y) {
+    const b = this._getPageBounds()
     return {
-      x: Math.max(BOUNDS.x + 20, Math.min(x, BOUNDS.x + BOUNDS.w - SHAPE_W - 20)),
-      y: Math.max(BOUNDS.y + 20, Math.min(y, BOUNDS.y + BOUNDS.h - SHAPE_H - 20)),
+      x: Math.max(b.x + 20, Math.min(x, b.x + b.w - SHAPE_W - 20)),
+      y: Math.max(b.y + 20, Math.min(y, b.y + b.h - SHAPE_H - 20)),
+    }
+  }
+
+  _getPageBounds() {
+    const settings = this.doc.getMap('canvas-settings')
+    return {
+      x: 0,
+      y: 0,
+      w: (settings.get('pageW')) || 1600,
+      h: (settings.get('pageH')) || 900,
     }
   }
 

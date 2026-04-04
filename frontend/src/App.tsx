@@ -7,6 +7,7 @@ import { useChat } from './hooks/useChat'
 import { useVoiceChat } from './hooks/useVoiceChat'
 import { useRemoteCursors } from './hooks/useRemoteCursors'
 import { useVoiceCommands } from './hooks/useVoiceCommands'
+import { usePageSizeProvider, PageSizeContext } from './hooks/usePageSize'
 import { HeaderBar } from './components/HeaderBar'
 import { LeftSidebar } from './components/LeftSidebar'
 import { DotGrid } from './components/DotGrid'
@@ -29,27 +30,19 @@ export default function App() {
   const chat = useChat(doc, userName)
   const voice = useVoiceChat(doc, provider)
   const voiceCmd = useVoiceCommands(doc, voice.isActive, userName, editor)
+  const pageSize = usePageSizeProvider(doc)
 
   const handleMount = useCallback((e: Editor) => {
     setEditor(e)
     e.updateInstanceState({ isGridMode: true })
     e.user.updateUserPreferences({ isSnapMode: true })
 
-    // Fit camera to show the 1600x900 canvas boundary
-    requestAnimationFrame(() => {
-      try {
-        const vw = Math.max(window.innerWidth - 64, 400)
-        const vh = Math.max(window.innerHeight - 50, 300)
-        const zoom = Math.min(vw / 1700, vh / 980, 1)
-        e.setCamera({ x: 50 / zoom, y: 50 / zoom, z: zoom })
-      } catch {
-        // Fallback: just reset camera
-        e.setCamera({ x: 0, y: 0, z: 0.8 })
-      }
-    })
+    // Center camera on the working area
+    e.setCamera({ x: 0, y: 0, z: 1 })
   }, [])
 
   return (
+    <PageSizeContext.Provider value={pageSize}>
     <div className="app">
       <HeaderBar
         roomId={roomId}
@@ -87,5 +80,6 @@ export default function App() {
         </div>
       </div>
     </div>
+    </PageSizeContext.Provider>
   )
 }
