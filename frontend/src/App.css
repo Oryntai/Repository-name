@@ -41,3 +41,11 @@ body,
 .canvas-container .tlui-helper-buttons {
   display: none !important;
 }
+
+/* Hide tldraw's default hover/hint shape indicators (the coloured outlines
+   that appear when the pointer moves over a shape).  Selected-shape
+   indicators are kept so users still see what is selected. */
+.tl-user-indicator__hovered,
+.tl-user-indicator__hint {
+  display: none !important;
+}

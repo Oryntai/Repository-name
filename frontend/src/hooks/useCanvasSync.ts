@@ -75,6 +75,10 @@ export function useCanvasSync(
       cleanups.current.push(unsubLocal)
 
       // Yjs -> Local
+      // We compare incoming records by value to avoid the "echo" problem:
+      // local change → Yjs → observer → store.put(structuredClone) would
+      // overwrite the store with a new object reference even though the data
+      // is identical, which can interfere with tldraw's active tool state.
       const handleYjsUpdate = (event: Y.YMapEvent<unknown>) => {
         editor.store.mergeRemoteChanges(() => {
           event.changes.keys.forEach((change, key) => {
@@ -82,7 +86,18 @@ export function useCanvasSync(
               case 'add':
               case 'update': {
                 const record = yStore.get(key) as TLRecord
-                if (record) editor.store.put([record])
+                if (!record) break
+                // Skip the echo: if the local store already has this exact data, do nothing.
+                const existing = editor.store.get(key as TLRecord['id'])
+                if (
+                  existing &&
+                  change.action === 'update' &&
+                  existing.typeName === (record as any).typeName &&
+                  JSON.stringify(existing) === JSON.stringify(record)
+                ) {
+                  break
+                }
+                editor.store.put([record])
                 break
               }
               case 'delete': {
