@@ -1,5 +1,4 @@
 /* ---- Color bar + size slider ---- */
-
 .custom-color-bar {
   position: absolute;
   bottom: 56px;
@@ -7,11 +6,12 @@
   transform: translateX(-50%);
   display: flex;
   align-items: center;
-  gap: 6px;
-  background: #2a2a3e;
-  padding: 6px 14px;
+  gap: 5px;
+  background: #1e1e34;
+  padding: 6px 12px;
   border-radius: 12px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.35);
+  border: 1px solid rgba(255,255,255,0.06);
   z-index: 300;
   user-select: none;
 }
@@ -27,17 +27,17 @@
   outline: none;
 }
 .color-dot:hover {
-  transform: scale(1.2);
+  transform: scale(1.15);
 }
 .color-dot.active {
-  outline: 2px solid #6c63ff;
+  outline: 2px solid #7c6fff;
   outline-offset: 2px;
 }
 
 .size-divider {
   width: 1px;
   height: 18px;
-  background: #444;
+  background: rgba(255,255,255,0.08);
   margin: 0 4px;
 }
 
@@ -45,20 +45,20 @@
   width: 80px;
   height: 4px;
   cursor: pointer;
-  accent-color: #6c63ff;
+  accent-color: #7c6fff;
 }
 
 /* ---- Zoom control ---- */
-
 .custom-zoom {
   position: absolute;
   bottom: 12px;
   left: 12px;
   display: flex;
   align-items: center;
-  background: #2a2a3e;
+  background: #1e1e34;
   border-radius: 10px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.35);
+  border: 1px solid rgba(255,255,255,0.06);
   z-index: 300;
   user-select: none;
   overflow: hidden;
@@ -70,25 +70,29 @@
   border: none;
   background: transparent;
   cursor: pointer;
-  font-size: 18px;
-  color: #ccc;
+  font-size: 16px;
+  color: #999;
   display: flex;
   align-items: center;
   justify-content: center;
+  transition: all 0.12s;
 }
 .custom-zoom button:hover {
-  background: #3a3a4e;
+  background: rgba(255,255,255,0.06);
+  color: #ddd;
 }
 
 .zoom-level {
   min-width: 46px;
   text-align: center;
-  font-size: 12px;
-  font-family: system-ui, sans-serif;
-  color: #aaa;
+  font-size: 11px;
+  font-family: 'Inter', system-ui, sans-serif;
+  font-weight: 500;
+  color: #888;
   cursor: pointer;
   line-height: 32px;
+  transition: color 0.12s;
 }
 .zoom-level:hover {
-  color: #fff;
+  color: #ddd;
 }

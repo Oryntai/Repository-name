@@ -43,6 +43,7 @@ export default function App() {
         userCount={userCount}
         status={status}
         voice={voice}
+        editor={editor}
       />
       <div className="workspace">
         <LeftSidebar editor={editor} chat={chat} userName={userName} />
@@ -56,6 +57,10 @@ export default function App() {
               DebugMenu: null,
               DebugPanel: null,
               HelpMenu: null,
+              MainMenu: null,
+              PageMenu: null,
+              ActionsMenu: null,
+              QuickActions: null,
             }}
           />
           {editor && <CanvasToolbar editor={editor} />}
