@@ -1,0 +1,13 @@
+{
+  "name": "ai-brainstorm-canvas",
+  "private": true,
+  "scripts": {
+    "install:all": "cd server && npm install && cd ../frontend && npm install",
+    "dev": "concurrently -n server,frontend -c blue,green \"cd server && npm run dev\" \"cd frontend && npm run dev\"",
+    "dev:server": "cd server && npm run dev",
+    "dev:frontend": "cd frontend && npm run dev"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  }
+}

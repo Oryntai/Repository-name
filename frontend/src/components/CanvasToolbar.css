@@ -1,0 +1,94 @@
+/* ---- Color bar + size slider ---- */
+
+.custom-color-bar {
+  position: absolute;
+  bottom: 56px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #2a2a3e;
+  padding: 6px 14px;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  z-index: 300;
+  user-select: none;
+}
+
+.color-dot {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  padding: 0;
+  cursor: pointer;
+  transition: transform 0.1s;
+  outline: none;
+}
+.color-dot:hover {
+  transform: scale(1.2);
+}
+.color-dot.active {
+  outline: 2px solid #6c63ff;
+  outline-offset: 2px;
+}
+
+.size-divider {
+  width: 1px;
+  height: 18px;
+  background: #444;
+  margin: 0 4px;
+}
+
+.size-slider {
+  width: 80px;
+  height: 4px;
+  cursor: pointer;
+  accent-color: #6c63ff;
+}
+
+/* ---- Zoom control ---- */
+
+.custom-zoom {
+  position: absolute;
+  bottom: 12px;
+  left: 12px;
+  display: flex;
+  align-items: center;
+  background: #2a2a3e;
+  border-radius: 10px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  z-index: 300;
+  user-select: none;
+  overflow: hidden;
+}
+
+.custom-zoom button {
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 18px;
+  color: #ccc;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.custom-zoom button:hover {
+  background: #3a3a4e;
+}
+
+.zoom-level {
+  min-width: 46px;
+  text-align: center;
+  font-size: 12px;
+  font-family: system-ui, sans-serif;
+  color: #aaa;
+  cursor: pointer;
+  line-height: 32px;
+}
+.zoom-level:hover {
+  color: #fff;
+}
