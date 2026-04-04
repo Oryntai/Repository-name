@@ -28,7 +28,7 @@ export default function App() {
   useRemoteCursors(editor, provider)
   const chat = useChat(doc, userName)
   const voice = useVoiceChat(doc, provider)
-  const voiceCmd = useVoiceCommands(doc, voice.isActive, userName)
+  const voiceCmd = useVoiceCommands(doc, voice.isActive, userName, editor)
 
   const handleMount = useCallback((e: Editor) => {
     setEditor(e)
@@ -49,6 +49,7 @@ export default function App() {
         agentAwake={voiceCmd.agentAwake}
         isListening={voiceCmd.isListening}
         isSpeaking={voiceCmd.isSpeaking}
+        phase={voiceCmd.phase}
         onToggleAgent={voiceCmd.agentAwake ? voiceCmd.manualSleep : voiceCmd.manualWake}
       />
       <div className="workspace">

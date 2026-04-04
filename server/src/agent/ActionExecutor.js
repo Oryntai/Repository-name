@@ -77,9 +77,10 @@ class ActionExecutor {
           font: 'draw',
           align: 'middle',
           verticalAlign: 'middle',
-          growY: 0,
-          fontSizeAdjustment: 0,
+          growY: 0.00001,
+          fontSizeAdjustment: 0.00001,
           url: '',
+          scale: 1,
         },
         meta: { createdBy: 'ai-agent' },
       })
@@ -253,6 +254,8 @@ class ActionExecutor {
             playing: true,
             url: '',
             crop: null,
+            flipX: false,
+            flipY: false,
           },
           meta: { createdBy: 'ai-agent' },
         })

@@ -169,39 +169,92 @@ class LLMClient {
   }
 
   /**
-   * Voice session — conversational, no canvas tools.
-   * Returns a plain text response to be spoken aloud via TTS.
+   * Voice session — conversational + canvas actions.
+   * Accepts an optional canvas screenshot for vision-based understanding.
+   * Returns a plain text response to be spoken aloud via TTS,
+   * plus optional tool calls for canvas actions.
    */
-  async callVoice(transcript, canvasContext) {
-    console.log(`[llm-voice] Calling ${this.model} for voice response`)
+  async callVoice(transcript, canvasContext, canvasImage = null) {
+    console.log(`[llm-voice] Calling ${this.model} (image: ${canvasImage ? 'yes' : 'no'})`)
+
+    const systemContent = `You are an AI brainstorming assistant in a voice conversation. Users are on a collaborative canvas and talking to you out loud.${canvasImage ? ' You can SEE the canvas — a screenshot is attached.' : ''}
+
+You MUST respond with tool calls. Always include a "speak" call with your verbal response.
+If the user asks you to do something on the canvas (draw, add, connect, group, generate image), also include the relevant canvas tool calls.
+
+Rules for "speak" text:
+- 1-3 short sentences, will be read aloud via TTS
+- Natural, conversational
+- Same language as the user (Russian or English)
+- No markdown, no lists — plain spoken text
+- If you see drawings on the canvas, describe what you actually see`
+
+    // Build user message content (text + optional image)
+    const userContent = []
+    if (canvasImage) {
+      userContent.push({ type: 'image_url', image_url: { url: canvasImage, detail: 'low' } })
+    }
+    userContent.push({
+      type: 'text',
+      text: `${canvasContext}\n\nUser said: "${transcript}"`,
+    })
+
+    const voiceTools = [
+      {
+        type: 'function',
+        function: {
+          name: 'speak',
+          description: 'Respond to the user verbally (will be read aloud via TTS)',
+          parameters: {
+            type: 'object',
+            properties: { text: { type: 'string', description: 'What to say to the user' } },
+            required: ['text'],
+          },
+        },
+      },
+      ...TOOLS.filter((t) => t.function.name !== 'send_message'),
+    ]
 
     const response = await this.client.chat.completions.create({
       model: this.model,
       messages: [
-        {
-          role: 'system',
-          content: `You are an AI brainstorming assistant in a voice conversation. Users are on a collaborative canvas and talking to you out loud.
-
-Rules:
-- Respond in 1-3 short sentences — your reply will be read aloud via TTS
-- Be conversational, natural, and helpful
-- You can see the canvas state below, reference it if relevant
-- Respond in the same language the user speaks (Russian or English)
-- Do NOT use markdown, lists, or formatting — plain spoken text only
-- Do NOT say "I'll add a sticky note" — you only talk here, the chat session handles canvas actions`,
-        },
-        {
-          role: 'user',
-          content: `Canvas state:\n${canvasContext}\n\nUser said: "${transcript}"`,
-        },
+        { role: 'system', content: systemContent },
+        { role: 'user', content: userContent },
       ],
+      tools: voiceTools,
+      tool_choice: 'required',
       temperature: 0.7,
-      max_tokens: 200,
+      max_tokens: 512,
     })
 
-    const text = response.choices[0]?.message?.content || ''
-    console.log(`[llm-voice] Response: "${text.substring(0, 80)}..."`)
-    return text
+    const message = response.choices[0]?.message
+    if (!message) return { speech: '', actions: [] }
+
+    let speech = ''
+    const actions = []
+
+    if (message.tool_calls) {
+      for (const tc of message.tool_calls) {
+        try {
+          const args = JSON.parse(tc.function.arguments)
+          if (tc.function.name === 'speak') {
+            speech = args.text || ''
+          } else {
+            actions.push({ name: tc.function.name, args })
+          }
+        } catch (err) {
+          console.error('[llm-voice] Failed to parse tool call:', err.message)
+        }
+      }
+    }
+
+    // Fallback: if no speak tool call but has content
+    if (!speech && message.content) {
+      speech = message.content
+    }
+
+    console.log(`[llm-voice] Speech: "${speech.substring(0, 60)}..." | Actions: ${actions.map((a) => a.name).join(', ') || 'none'}`)
+    return { speech, actions }
   }
 }
 

@@ -1,77 +1,85 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
+import type { Editor } from 'tldraw'
 import * as Y from 'yjs'
 
 const WAKE_PHRASES = ['эй человек', 'эй, человек', 'hey human']
 const SLEEP_PHRASES = ['пока человек', 'пока, человек', 'bye human']
-const COMMAND_DEBOUNCE_MS = 3000
-const aiSound = new Audio('/ai-trigger.mp3')
-aiSound.volume = 0.5
+
+const triggerSound = new Audio('/ai-trigger.mp3')
+triggerSound.volume = 0.6
+
+/**
+ * STATE MACHINE:
+ *
+ * WAITING  — SpeechRecognition always on, only checking for "эй человек". Zero tokens.
+ *    │
+ *    ├── "эй человек" detected
+ *    │       → play sound IMMEDIATELY
+ *    │       → show "AI on"
+ *    ▼
+ * TRIGGERED — listening for the user's actual command (next utterance)
+ *    │
+ *    ├── "пока человек" → back to WAITING
+ *    ├── any other speech → capture as command
+ *    ▼
+ * PROCESSING — command + canvas screenshot sent to server → LLM → TTS
+ *    │
+ *    └── after TTS finishes → back to WAITING
+ */
+type Phase = 'WAITING' | 'TRIGGERED' | 'PROCESSING'
 
 interface VoiceEntry {
   type: 'transcript' | 'response'
   text: string
   user?: string
+  image?: string // base64 canvas screenshot
   timestamp: number
 }
 
-/**
- * Voice commands hook — handles two things:
- * 1. SpeechRecognition: listens to mic, detects wake/sleep, transcribes speech → Y.Array('voice-channel')
- * 2. SpeechSynthesis: watches voice-channel for AI responses → reads them aloud (TTS)
- */
 export function useVoiceCommands(
   doc: Y.Doc | null,
   isVoiceActive: boolean,
   userName: string,
+  editor: Editor | null,
 ) {
-  const [isListening, setIsListening] = useState(false)
-  const [agentAwake, setAgentAwake] = useState(false)
+  const [phase, setPhase] = useState<Phase>('WAITING')
   const [isSpeaking, setIsSpeaking] = useState(false)
+  const phaseRef = useRef<Phase>('WAITING')
   const recognitionRef = useRef<any>(null)
-  const lastCommandTimeRef = useRef<number>(0)
   const restartTimerRef = useRef<ReturnType<typeof setTimeout>>()
-  const processedResponsesRef = useRef<Set<number>>(new Set())
+  const processedRef = useRef<Set<number>>(new Set())
+  const editorRef = useRef(editor)
+  editorRef.current = editor
 
-  // --- Watch agent status from server ---
-  useEffect(() => {
-    if (!doc) return
-    const yControl = doc.getMap('agent-control')
-    const onUpdate = () => {
-      const status = yControl.get('status') as { awake: boolean } | undefined
-      if (status) setAgentAwake(status.awake)
-    }
-    yControl.observe(onUpdate)
-    onUpdate()
-    return () => yControl.unobserve(onUpdate)
-  }, [doc])
+  // Sync ref with state
+  useEffect(() => { phaseRef.current = phase }, [phase])
 
   // --- Watch voice-channel for AI responses → TTS ---
   useEffect(() => {
     if (!doc) return
     const yVoice = doc.getArray<VoiceEntry>('voice-channel')
 
-    const onVoiceUpdate = (event: Y.YArrayEvent<VoiceEntry>) => {
+    const onUpdate = (event: Y.YArrayEvent<VoiceEntry>) => {
       for (const change of event.changes.delta) {
         if (!change.insert) continue
         for (const entry of change.insert as VoiceEntry[]) {
           if (entry.type !== 'response') continue
-          if (processedResponsesRef.current.has(entry.timestamp)) continue
-          processedResponsesRef.current.add(entry.timestamp)
-          aiSound.currentTime = 0
-          aiSound.play().catch(() => {})
+          if (processedRef.current.has(entry.timestamp)) continue
+          processedRef.current.add(entry.timestamp)
           speakText(entry.text)
         }
       }
     }
 
-    yVoice.observe(onVoiceUpdate)
-    return () => yVoice.unobserve(onVoiceUpdate)
+    yVoice.observe(onUpdate)
+    return () => yVoice.unobserve(onUpdate)
   }, [doc])
 
-  // --- Start/stop recognition based on voice chat ---
+  // --- Start/stop recognition with voice chat ---
   useEffect(() => {
     if (!doc || !isVoiceActive) {
       stopRecognition()
+      goToWaiting()
       return
     }
     startRecognition(doc)
@@ -79,14 +87,14 @@ export function useVoiceCommands(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [doc, isVoiceActive])
 
-  // ========== SPEECH RECOGNITION ==========
+  // ========== SPEECH RECOGNITION (always-on keyword spotter) ==========
 
   function startRecognition(yjsDoc: Y.Doc) {
     if (recognitionRef.current) return
 
     const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
     if (!SR) {
-      console.warn('[voice-cmd] SpeechRecognition not supported')
+      console.warn('[voice] SpeechRecognition not supported')
       return
     }
 
@@ -96,73 +104,37 @@ export function useVoiceCommands(
     recognition.lang = 'ru-RU'
     recognition.maxAlternatives = 3
 
-    recognition.onstart = () => {
-      console.log('[voice-cmd] Listening...')
-      setIsListening(true)
-    }
+    recognition.onstart = () => console.log('[voice] Keyword spotter active')
 
     recognition.onresult = (event: any) => {
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const result = event.results[i]
         if (!result.isFinal) continue
 
-        const transcript = result[0].transcript.toLowerCase().trim()
-        const confidence = result[0].confidence
-        console.log(`[voice-cmd] "${transcript}" (${(confidence * 100).toFixed(0)}%)`)
-
-        if (!transcript) continue
-
-        const now = Date.now()
-
-        // Check all alternatives for wake/sleep commands
-        let isCommand = false
+        const allTranscripts: string[] = []
         for (let j = 0; j < result.length; j++) {
-          const alt = result[j].transcript.toLowerCase().trim()
-
-          if (WAKE_PHRASES.some((p) => alt.includes(p))) {
-            if (now - lastCommandTimeRef.current > COMMAND_DEBOUNCE_MS) {
-              lastCommandTimeRef.current = now
-              console.log('[voice-cmd] >>> WAKE')
-              sendControl(yjsDoc, 'wake')
-              isCommand = true
-            }
-            break
-          }
-          if (SLEEP_PHRASES.some((p) => alt.includes(p))) {
-            if (now - lastCommandTimeRef.current > COMMAND_DEBOUNCE_MS) {
-              lastCommandTimeRef.current = now
-              console.log('[voice-cmd] >>> SLEEP')
-              sendControl(yjsDoc, 'sleep')
-              isCommand = true
-            }
-            break
-          }
+          allTranscripts.push(result[j].transcript.toLowerCase().trim())
         }
 
-        // If agent is awake and this wasn't a command, send as transcript for AI to process
-        if (!isCommand && agentAwakeRef.current) {
-          const rawTranscript = result[0].transcript.trim() // Preserve original casing
-          if (rawTranscript.length > 2) {
-            sendTranscript(yjsDoc, rawTranscript)
-          }
-        }
+        const primary = result[0].transcript.trim()
+        console.log(`[voice] Heard: "${primary}" (phase=${phaseRef.current})`)
+
+        handleSpeechResult(yjsDoc, allTranscripts, primary)
       }
     }
 
     recognition.onerror = (event: any) => {
       if (event.error === 'no-speech' || event.error === 'aborted') return
-      console.warn(`[voice-cmd] Error: ${event.error}`)
+      console.warn(`[voice] Error: ${event.error}`)
     }
 
     recognition.onend = () => {
-      // Auto-restart — Chrome stops after ~60s of silence
+      // Auto-restart (Chrome stops after ~60s silence)
       if (recognitionRef.current) {
         clearTimeout(restartTimerRef.current)
         restartTimerRef.current = setTimeout(() => {
-          try { recognitionRef.current?.start() } catch { /* already running */ }
+          try { recognitionRef.current?.start() } catch { /* ok */ }
         }, 300)
-      } else {
-        setIsListening(false)
       }
     }
 
@@ -170,7 +142,7 @@ export function useVoiceCommands(
       recognition.start()
       recognitionRef.current = recognition
     } catch (err) {
-      console.error('[voice-cmd] Start failed:', err)
+      console.error('[voice] Start failed:', err)
     }
   }
 
@@ -178,36 +150,136 @@ export function useVoiceCommands(
     clearTimeout(restartTimerRef.current)
     if (recognitionRef.current) {
       const r = recognitionRef.current
-      recognitionRef.current = null // Prevent auto-restart
+      recognitionRef.current = null
       r.onend = null
-      try { r.stop() } catch { /* already stopped */ }
+      try { r.stop() } catch { /* ok */ }
     }
-    setIsListening(false)
   }
 
-  // Keep a ref so the onresult callback sees current value
-  const agentAwakeRef = useRef(agentAwake)
-  agentAwakeRef.current = agentAwake
+  // ========== STATE MACHINE ==========
 
-  // ========== SPEECH SYNTHESIS (TTS) ==========
+  function handleSpeechResult(yjsDoc: Y.Doc, alternatives: string[], rawPrimary: string) {
+    const current = phaseRef.current
 
-  function speakText(text: string) {
-    if (!text.trim()) return
-    if (!window.speechSynthesis) {
-      console.warn('[voice-cmd] SpeechSynthesis not supported')
+    // Check for sleep command in any phase
+    if (alternatives.some((t) => SLEEP_PHRASES.some((p) => t.includes(p)))) {
+      console.log('[voice] Sleep command → WAITING')
+      goToWaiting()
       return
     }
 
-    // Cancel any ongoing speech
+    if (current === 'WAITING') {
+      // Only check for wake word — ignore everything else (zero tokens)
+      if (alternatives.some((t) => WAKE_PHRASES.some((p) => t.includes(p)))) {
+        console.log('[voice] >>> WAKE WORD DETECTED')
+        triggerSound.currentTime = 0
+        triggerSound.play().catch(() => {})
+        setPhase('TRIGGERED')
+        phaseRef.current = 'TRIGGERED'
+        // Broadcast awake state to all clients
+        yjsDoc.getMap('agent-control').set('command', { action: 'wake', source: 'voice', timestamp: Date.now() })
+      }
+      // Everything else is silently ignored — no tokens spent
+      return
+    }
+
+    if (current === 'TRIGGERED') {
+      // This is the user's actual command — send it to the LLM
+      if (rawPrimary.length < 3) return // Too short, probably noise
+
+      console.log(`[voice] Command captured: "${rawPrimary}"`)
+      setPhase('PROCESSING')
+      phaseRef.current = 'PROCESSING'
+
+      // Capture canvas screenshot + send transcript
+      captureAndSend(yjsDoc, rawPrimary)
+      return
+    }
+
+    // PROCESSING — ignore speech while LLM is working
+  }
+
+  async function captureAndSend(yjsDoc: Y.Doc, transcript: string) {
+    let image: string | null = null
+    try {
+      image = await captureCanvas()
+    } catch (err) {
+      console.warn('[voice] Canvas capture failed:', err)
+    }
+
+    const yVoice = yjsDoc.getArray('voice-channel')
+    const entry: VoiceEntry = {
+      type: 'transcript',
+      text: transcript,
+      user: userName,
+      timestamp: Date.now(),
+    }
+    if (image) (entry as any).image = image
+
+    yVoice.push([entry])
+    console.log(`[voice] Transcript sent (image: ${image ? 'yes' : 'no'})`)
+  }
+
+  // ========== CANVAS SCREENSHOT (for vision) ==========
+
+  async function captureCanvas(): Promise<string | null> {
+    const ed = editorRef.current
+    if (!ed) return null
+
+    const shapeIds = [...ed.getCurrentPageShapeIds()]
+    if (shapeIds.length === 0) return null
+
+    try {
+      // tldraw v2.4: getSvg returns an SVG element
+      const svg = await (ed as any).getSvg(shapeIds)
+      if (!svg) return null
+
+      const svgString = new XMLSerializer().serializeToString(svg)
+      const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' })
+      const url = URL.createObjectURL(svgBlob)
+
+      return await new Promise<string | null>((resolve) => {
+        const img = new Image()
+        img.onload = () => {
+          // Scale down to save tokens — 800px max dimension
+          const scale = Math.min(1, 800 / Math.max(img.width, img.height))
+          const w = Math.round(img.width * scale)
+          const h = Math.round(img.height * scale)
+
+          const canvas = document.createElement('canvas')
+          canvas.width = w
+          canvas.height = h
+          const ctx = canvas.getContext('2d')!
+          ctx.fillStyle = '#ffffff'
+          ctx.fillRect(0, 0, w, h)
+          ctx.drawImage(img, 0, 0, w, h)
+
+          URL.revokeObjectURL(url)
+          resolve(canvas.toDataURL('image/jpeg', 0.6))
+        }
+        img.onerror = () => {
+          URL.revokeObjectURL(url)
+          resolve(null)
+        }
+        img.src = url
+      })
+    } catch {
+      return null
+    }
+  }
+
+  // ========== TTS ==========
+
+  function speakText(text: string) {
+    if (!text.trim() || !window.speechSynthesis) return
+
     window.speechSynthesis.cancel()
 
     const utterance = new SpeechSynthesisUtterance(text)
     utterance.lang = /[а-яё]/i.test(text) ? 'ru-RU' : 'en-US'
     utterance.rate = 1.05
-    utterance.pitch = 1.0
     utterance.volume = 1.0
 
-    // Try to pick a good voice
     const voices = window.speechSynthesis.getVoices()
     const preferred = voices.find(
       (v) => v.lang.startsWith(utterance.lang.substring(0, 2)) && v.localService
@@ -215,46 +287,43 @@ export function useVoiceCommands(
     if (preferred) utterance.voice = preferred
 
     utterance.onstart = () => setIsSpeaking(true)
-    utterance.onend = () => setIsSpeaking(false)
-    utterance.onerror = () => setIsSpeaking(false)
+    utterance.onend = () => {
+      setIsSpeaking(false)
+      // After TTS finishes → back to WAITING
+      goToWaiting()
+    }
+    utterance.onerror = () => {
+      setIsSpeaking(false)
+      goToWaiting()
+    }
 
     window.speechSynthesis.speak(utterance)
-    console.log(`[voice-cmd] TTS: "${text.substring(0, 60)}..."`)
   }
 
-  // ========== YJS WRITES ==========
-
-  function sendControl(yjsDoc: Y.Doc, action: 'wake' | 'sleep') {
-    yjsDoc.getMap('agent-control').set('command', {
-      action,
-      source: 'voice',
-      timestamp: Date.now(),
-    })
+  function goToWaiting() {
+    setPhase('WAITING')
+    phaseRef.current = 'WAITING'
   }
 
-  function sendTranscript(yjsDoc: Y.Doc, text: string) {
-    const yVoice = yjsDoc.getArray('voice-channel')
-    yVoice.push([
-      {
-        type: 'transcript',
-        text,
-        user: userName,
-        timestamp: Date.now(),
-      } as VoiceEntry,
-    ])
-    console.log(`[voice-cmd] Transcript sent: "${text}"`)
-  }
+  // ========== MANUAL CONTROLS (for chat / button) ==========
 
-  // Manual controls for non-voice users
   const manualWake = useCallback(() => {
     if (!doc) return
-    sendControl(doc, 'wake')
+    triggerSound.currentTime = 0
+    triggerSound.play().catch(() => {})
+    setPhase('TRIGGERED')
+    phaseRef.current = 'TRIGGERED'
+    doc.getMap('agent-control').set('command', { action: 'wake', source: 'button', timestamp: Date.now() })
   }, [doc])
 
   const manualSleep = useCallback(() => {
     if (!doc) return
-    sendControl(doc, 'sleep')
+    goToWaiting()
+    doc.getMap('agent-control').set('command', { action: 'sleep', source: 'button', timestamp: Date.now() })
   }, [doc])
 
-  return { isListening, agentAwake, isSpeaking, manualWake, manualSleep }
+  const agentAwake = phase !== 'WAITING'
+  const isListening = recognitionRef.current !== null
+
+  return { phase, agentAwake, isListening, isSpeaking, manualWake, manualSleep }
 }

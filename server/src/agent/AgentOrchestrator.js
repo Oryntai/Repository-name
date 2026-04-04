@@ -83,26 +83,33 @@ class AgentOrchestrator {
   async _onVoiceTrigger(transcript, userName) {
     console.log(`[agent-voice] Processing transcript from ${userName}: "${transcript}"`)
 
-    // Build canvas + last 4 voice messages as conversation context
-    const canvasContext = this.contextBuilder.buildVoiceContext()
-    const responseText = await this.llmClient.callVoice(transcript, canvasContext)
+    // Get canvas screenshot if available (from the latest voice-channel entry)
+    const yVoice = this.doc.getArray('voice-channel')
+    const allEntries = yVoice.toArray()
+    const latestTranscript = allEntries.filter((e) => e.type === 'transcript').pop()
+    const canvasImage = latestTranscript?.image || null
 
-    if (!responseText.trim()) {
-      console.log('[agent-voice] LLM returned empty response')
-      return
+    // Build context with last 4 voice messages
+    const canvasContext = this.contextBuilder.buildVoiceContext()
+    const { speech, actions } = await this.llmClient.callVoice(transcript, canvasContext, canvasImage)
+
+    // Execute canvas actions if any (add_idea, connect, generate_image, etc.)
+    if (actions.length > 0) {
+      this._moveCursorNear(actions)
+      await this.actionExecutor.execute(actions)
     }
 
-    // Push response to voice-channel for frontend TTS
-    const yVoice = this.doc.getArray('voice-channel')
-    yVoice.push([
-      {
-        type: 'response',
-        text: responseText,
-        timestamp: Date.now(),
-      },
-    ])
-
-    console.log(`[agent-voice] Response queued for TTS: "${responseText.substring(0, 60)}..."`)
+    // Push speech response for frontend TTS
+    if (speech.trim()) {
+      yVoice.push([
+        {
+          type: 'response',
+          text: speech,
+          timestamp: Date.now(),
+        },
+      ])
+      console.log(`[agent-voice] TTS: "${speech.substring(0, 60)}..." | Canvas actions: ${actions.length}`)
+    }
   }
 
   _moveCursorNear(actions) {

@@ -22,6 +22,7 @@ interface HeaderBarProps {
   agentAwake: boolean
   isListening: boolean
   isSpeaking: boolean
+  phase: 'WAITING' | 'TRIGGERED' | 'PROCESSING'
   onToggleAgent: () => void
 }
 
@@ -36,6 +37,7 @@ export function HeaderBar({
   agentAwake,
   isListening,
   isSpeaking,
+  phase,
   onToggleAgent,
 }: HeaderBarProps) {
   return (
@@ -86,13 +88,18 @@ export function HeaderBar({
           </div>
         )}
         <button
-          className={`hdr-ai-badge ${agentAwake ? 'awake' : 'sleeping'} ${isSpeaking ? 'speaking' : ''}`}
+          className={`hdr-ai-badge ${phase === 'WAITING' ? 'sleeping' : 'awake'} ${isSpeaking ? 'speaking' : ''} ${phase === 'TRIGGERED' ? 'triggered' : ''}`}
           onClick={onToggleAgent}
-          title={agentAwake ? 'AI is listening — click or say "пока человек" to sleep' : 'AI is sleeping — click or say "эй человек" to wake'}
+          title={agentAwake ? 'AI is listening — click or say "пока человек" to dismiss' : 'Say "эй человек" to wake AI'}
         >
           <span className="hdr-ai-dot" />
-          <span>{isSpeaking ? 'AI speaking...' : agentAwake ? 'AI on' : 'AI off'}</span>
-          {isListening && <span className="hdr-ai-ear" title="Voice recognition active">🎤</span>}
+          <span>{
+            isSpeaking ? 'AI speaking...'
+            : phase === 'PROCESSING' ? 'AI thinking...'
+            : phase === 'TRIGGERED' ? 'AI listening...'
+            : 'AI off'
+          }</span>
+          {isListening && phase === 'WAITING' && <span className="hdr-ai-ear" title="Keyword spotter active">🎤</span>}
         </button>
       </div>
 

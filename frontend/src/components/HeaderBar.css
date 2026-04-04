@@ -162,6 +162,16 @@
   font-size: 10px;
   margin-left: 2px;
 }
+.hdr-ai-badge.triggered {
+  color: #4caf50;
+  background: rgba(76,175,80,0.18);
+  border-color: rgba(76,175,80,0.4);
+  animation: ai-badge-glow 1s ease-in-out infinite;
+}
+@keyframes ai-badge-glow {
+  0%, 100% { box-shadow: 0 0 4px rgba(76,175,80,0.2); }
+  50% { box-shadow: 0 0 12px rgba(76,175,80,0.5); }
+}
 .hdr-ai-badge.speaking {
   color: #7c6fff;
   background: rgba(124,111,255,0.15);
