@@ -95,12 +95,16 @@ const TOOLS = [
     type: 'function',
     function: {
       name: 'generate_image',
-      description: 'Generate an image using AI and place it on the canvas to visualize an idea',
+      description: 'Generate a NEW standalone image and place it on the canvas. Do NOT use this to modify existing drawings — use edit_drawing for that.',
       parameters: {
         type: 'object',
         properties: {
           prompt: { type: 'string', description: 'Image generation prompt' },
           nearShapeId: { type: 'string', description: 'Place near this shape ID' },
+          relative_scale: {
+            type: 'number',
+            description: 'Size relative to existing drawings on canvas. 1.0 = same size as the drawing. Examples: ant next to a person = 0.15, sun in a scene = 0.5, tree next to a person = 1.3, house behind a person = 1.5. Range: 0.1 to 3.0.',
+          },
         },
         required: ['prompt'],
       },
@@ -189,7 +193,17 @@ Rules for "speak" text:
 - Same language as the user (Russian or English)
 - No markdown, no lists — plain spoken text
 - If you see drawings on the canvas, describe what you actually see
-- IMPORTANT: All shapes you create MUST be placed inside the canvas page boundary. Never place anything outside the visible page area.`
+- IMPORTANT: All shapes you create MUST be placed inside the canvas page boundary. Never place anything outside the visible page area.
+
+CRITICAL — tool selection:
+- "edit_drawing": Use when user asks to MODIFY their existing drawing (e.g. "add hair", "draw eyes", "color the shirt"). This edits the canvas screenshot directly.
+- "generate_image": Use ONLY for creating a brand-new standalone image (e.g. "generate a sun", "create a tree"). NEVER use this to modify existing drawings.
+- "add_idea": Use ONLY for text sticky notes with brainstorming ideas. NEVER use for drawing requests.
+
+CRITICAL — sizing for generate_image:
+- Always set "relative_scale" to size the generated image proportionally to the existing drawing.
+- Think about real-world proportions: an ant next to a person → 0.15, a cat → 0.3, a sun in the sky → 0.5, a tree → 1.3, a house → 1.5.
+- If the user's drawing is small, the additions should be proportionally small. If large, proportionally large.`
 
     // Build user message content (text + optional image)
     const userContent = []
@@ -211,6 +225,23 @@ Rules for "speak" text:
             type: 'object',
             properties: { text: { type: 'string', description: 'What to say to the user' } },
             required: ['text'],
+          },
+        },
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'edit_drawing',
+          description: 'Edit/modify the existing drawing on the canvas. Use this when the user asks to change, add to, or modify their current drawing (e.g. "add hair", "color the shirt", "draw eyes"). This takes a screenshot of the current canvas and uses AI image editing to apply the requested changes.',
+          parameters: {
+            type: 'object',
+            properties: {
+              instruction: {
+                type: 'string',
+                description: 'What to change in the drawing (e.g. "add curly hair to the character", "draw eyes on the face")',
+              },
+            },
+            required: ['instruction'],
           },
         },
       },

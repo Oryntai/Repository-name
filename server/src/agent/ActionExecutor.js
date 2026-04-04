@@ -1,3 +1,6 @@
+const OpenAI = require('openai')
+const { toFile } = require('openai')
+
 const AGENT_NAME = 'AI Assistant'
 
 const SHAPE_W = 200
@@ -24,6 +27,7 @@ class ActionExecutor {
     this.yStore = doc.getMap('tldraw')
     this.yChat = doc.getArray('chat')
     this.higgsClient = higgsClient
+    this.canvasImage = null // set per-request by orchestrator
   }
 
   async execute(actions) {
@@ -47,6 +51,9 @@ class ActionExecutor {
             break
           case 'generate_image':
             await this._generateImage(action.args)
+            break
+          case 'edit_drawing':
+            await this._editDrawing(action.args)
             break
           default:
             console.warn(`[executor] Unknown action: ${action.name}`)
@@ -202,7 +209,7 @@ class ActionExecutor {
     console.log(`[executor] Sent chat: "${text}"`)
   }
 
-  async _generateImage({ prompt, nearShapeId }) {
+  async _generateImage({ prompt, nearShapeId, relative_scale }) {
     if (!this.higgsClient) {
       this._sendMessage({ text: `I'd like to generate an image for "${prompt}" but image generation is not configured.` })
       return
@@ -217,28 +224,39 @@ class ActionExecutor {
         return
       }
 
+      // Download image and embed as base64 data URL (external URLs break due to CORS/expiry)
+      const src = await this._downloadAsDataUrl(imageUrl)
+      if (!src) {
+        this._sendMessage({ text: 'Image generation failed — could not download image.' })
+        return
+      }
+
+      // Smart sizing: scale relative to existing drawings on canvas
+      const drawingBounds = this._getDrawingBounds()
+      const scale = Math.max(0.1, Math.min(3.0, relative_scale || 1.0))
+      const baseSize = Math.max(drawingBounds.w, drawingBounds.h)
+      const imgSize = Math.round(Math.max(80, Math.min(800, baseSize * scale)))
+
       const pos = this._computePosition(nearShapeId)
       const assetId = makeId('asset')
       const shapeId = makeId('shape')
 
       this.doc.transact(() => {
-        // Create asset
         this.yStore.set(assetId, {
           id: assetId,
           typeName: 'asset',
           type: 'image',
           props: {
             name: prompt.substring(0, 30),
-            src: imageUrl,
-            w: 400,
-            h: 400,
+            src,
+            w: imgSize,
+            h: imgSize,
             mimeType: 'image/png',
             isAnimated: false,
           },
           meta: { createdBy: 'ai-agent' },
         })
 
-        // Create image shape
         this.yStore.set(shapeId, {
           id: shapeId,
           typeName: 'shape',
@@ -252,8 +270,8 @@ class ActionExecutor {
           opacity: 1,
           props: {
             assetId,
-            w: 300,
-            h: 300,
+            w: imgSize,
+            h: imgSize,
             playing: true,
             url: '',
             crop: null,
@@ -264,10 +282,173 @@ class ActionExecutor {
         })
       })
 
-      console.log(`[executor] Generated and placed image for "${prompt}"`)
+      console.log(`[executor] Generated image "${prompt}" at ${imgSize}x${imgSize} (scale=${scale})`)
     } catch (err) {
-      console.error('[executor] Image generation error:', err.message)
+      console.error('[executor] Image generation error:', err.stack || err.message)
       this._sendMessage({ text: `Image generation failed: ${err.message}` })
+    }
+  }
+
+  async _editDrawing({ instruction }) {
+    if (!this.canvasImage) {
+      this._sendMessage({ text: 'Cannot edit drawing — no canvas screenshot available.' })
+      return
+    }
+
+    this._sendMessage({ text: `Editing your drawing: "${instruction}"...` })
+
+    try {
+      const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+
+      // Convert data-URL → Buffer → File for the API
+      const base64Data = this.canvasImage.replace(/^data:image\/\w+;base64,/, '')
+      const imageBuffer = Buffer.from(base64Data, 'base64')
+      // Detect actual format from the data URL (frontend sends JPEG)
+      const mimeMatch = this.canvasImage.match(/^data:(image\/\w+);/)
+      const mime = mimeMatch?.[1] || 'image/jpeg'
+      const ext = mime === 'image/png' ? 'png' : 'jpg'
+      const imageFile = await toFile(imageBuffer, `canvas.${ext}`, { type: mime })
+
+      console.log(`[executor] Sending image to OpenAI edit API (${imageBuffer.length} bytes)...`)
+
+      const response = await openai.images.edit({
+        model: 'gpt-image-1',
+        image: imageFile,
+        prompt: `You are editing a hand-drawn sketch on a whiteboard canvas. ${instruction}. Keep the existing drawing intact and only add/modify what was requested. Maintain the same sketch/drawing style.`,
+        size: '1024x1024',
+      })
+
+      // gpt-image-1 returns b64_json by default; dall-e-2 returns url
+      const resultData = response.data?.[0]
+      let src = null
+
+      if (resultData?.b64_json) {
+        src = `data:image/png;base64,${resultData.b64_json}`
+      } else if (resultData?.url) {
+        src = await this._downloadAsDataUrl(resultData.url)
+      }
+
+      if (!src) {
+        this._sendMessage({ text: 'Drawing edit failed — no image returned.' })
+        return
+      }
+
+      // Place the edited image on the canvas, covering the original drawing area
+      const bounds = this._getDrawingBounds()
+      const assetId = makeId('asset')
+      const shapeId = makeId('shape')
+
+      this.doc.transact(() => {
+        this.yStore.set(assetId, {
+          id: assetId,
+          typeName: 'asset',
+          type: 'image',
+          props: {
+            name: `edit-${instruction.substring(0, 20)}`,
+            src,
+            w: bounds.w,
+            h: bounds.h,
+            mimeType: 'image/png',
+            isAnimated: false,
+          },
+          meta: { createdBy: 'ai-agent' },
+        })
+
+        this.yStore.set(shapeId, {
+          id: shapeId,
+          typeName: 'shape',
+          type: 'image',
+          x: bounds.x,
+          y: bounds.y,
+          rotation: 0,
+          index: nextIndex(),
+          parentId: 'page:page',
+          isLocked: false,
+          opacity: 1,
+          props: {
+            assetId,
+            w: bounds.w,
+            h: bounds.h,
+            playing: true,
+            url: '',
+            crop: null,
+            flipX: false,
+            flipY: false,
+          },
+          meta: { createdBy: 'ai-agent' },
+        })
+      })
+
+      console.log(`[executor] Edited drawing: "${instruction}"`)
+    } catch (err) {
+      console.error('[executor] Drawing edit error:', err.stack || err.message)
+      this._sendMessage({ text: `Drawing edit failed: ${err.message}` })
+    }
+  }
+
+  /** Get bounding box of all user-drawn shapes */
+  _getDrawingBounds() {
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+    let found = false
+
+    this.yStore.forEach((record) => {
+      if (record?.typeName !== 'shape' || record?.meta?.createdBy) return
+
+      const sx = record.x || 0
+      const sy = record.y || 0
+
+      if (record.type === 'draw') {
+        // Draw shapes: compute bounds from segment points (relative to shape origin)
+        const segments = record.props?.segments
+        if (segments && Array.isArray(segments)) {
+          for (const seg of segments) {
+            if (!seg.points) continue
+            for (const pt of seg.points) {
+              minX = Math.min(minX, sx + (pt.x || 0))
+              minY = Math.min(minY, sy + (pt.y || 0))
+              maxX = Math.max(maxX, sx + (pt.x || 0))
+              maxY = Math.max(maxY, sy + (pt.y || 0))
+            }
+          }
+          found = true
+        }
+      } else {
+        // Other shapes (geo, note, image, etc.): use props.w/h
+        const w = record.props?.w || 200
+        const h = record.props?.h || 200
+        minX = Math.min(minX, sx)
+        minY = Math.min(minY, sy)
+        maxX = Math.max(maxX, sx + w)
+        maxY = Math.max(maxY, sy + h)
+        found = true
+      }
+    })
+
+    if (!found) {
+      const page = this._getPageBounds()
+      return { x: page.x + 50, y: page.y + 50, w: 500, h: 500 }
+    }
+
+    const padding = 20
+    return {
+      x: minX - padding,
+      y: minY - padding,
+      w: Math.max(100, maxX - minX + padding * 2),
+      h: Math.max(100, maxY - minY + padding * 2),
+    }
+  }
+
+  /** Download an image URL and return as a base64 data URL (avoids CORS/expiry issues) */
+  async _downloadAsDataUrl(url) {
+    try {
+      const response = await fetch(url)
+      if (!response.ok) throw new Error(`HTTP ${response.status}`)
+      const buffer = Buffer.from(await response.arrayBuffer())
+      const mimeType = response.headers.get('content-type') || 'image/png'
+      return `data:${mimeType};base64,${buffer.toString('base64')}`
+    } catch (err) {
+      console.error('[executor] Image download failed:', err.message)
+      return null
     }
   }
 

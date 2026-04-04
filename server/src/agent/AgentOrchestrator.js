@@ -89,10 +89,13 @@ class AgentOrchestrator {
     const canvasContext = this.contextBuilder.buildVoiceContext()
     const { speech, actions } = await this.llmClient.callVoice(transcript, canvasContext, canvasImage)
 
-    // Execute canvas actions if any (add_idea, connect, generate_image, etc.)
+    // Execute canvas actions if any (add_idea, connect, generate_image, edit_drawing, etc.)
     if (actions.length > 0) {
       this._moveCursorNear(actions)
+      // Pass canvas image so edit_drawing can use it
+      this.actionExecutor.canvasImage = canvasImage
       await this.actionExecutor.execute(actions)
+      this.actionExecutor.canvasImage = null
     }
 
     // Push speech response for frontend TTS
