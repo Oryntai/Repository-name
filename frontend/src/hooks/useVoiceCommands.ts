@@ -47,6 +47,7 @@ export function useVoiceCommands(
   const phaseRef = useRef<Phase>('WAITING')
   const recognitionRef = useRef<any>(null)
   const restartTimerRef = useRef<ReturnType<typeof setTimeout>>()
+  const processingTimeoutRef = useRef<ReturnType<typeof setTimeout>>()
   const processedRef = useRef<Set<number>>(new Set())
   const editorRef = useRef(editor)
   editorRef.current = editor
@@ -176,8 +177,6 @@ export function useVoiceCommands(
         triggerSound.play().catch(() => {})
         setPhase('TRIGGERED')
         phaseRef.current = 'TRIGGERED'
-        // Broadcast awake state to all clients
-        yjsDoc.getMap('agent-control').set('command', { action: 'wake', source: 'voice', timestamp: Date.now() })
       }
       // Everything else is silently ignored — no tokens spent
       return
@@ -190,6 +189,15 @@ export function useVoiceCommands(
       console.log(`[voice] Command captured: "${rawPrimary}"`)
       setPhase('PROCESSING')
       phaseRef.current = 'PROCESSING'
+
+      // Safety: if no response within 30s, reset to WAITING
+      clearTimeout(processingTimeoutRef.current)
+      processingTimeoutRef.current = setTimeout(() => {
+        if (phaseRef.current === 'PROCESSING') {
+          console.warn('[voice] Processing timeout — resetting to WAITING')
+          goToWaiting()
+        }
+      }, 30000)
 
       // Capture canvas screenshot + send transcript
       captureAndSend(yjsDoc, rawPrimary)
@@ -301,6 +309,7 @@ export function useVoiceCommands(
   }
 
   function goToWaiting() {
+    clearTimeout(processingTimeoutRef.current)
     setPhase('WAITING')
     phaseRef.current = 'WAITING'
   }
@@ -313,14 +322,11 @@ export function useVoiceCommands(
     triggerSound.play().catch(() => {})
     setPhase('TRIGGERED')
     phaseRef.current = 'TRIGGERED'
-    doc.getMap('agent-control').set('command', { action: 'wake', source: 'button', timestamp: Date.now() })
   }, [doc])
 
   const manualSleep = useCallback(() => {
-    if (!doc) return
     goToWaiting()
-    doc.getMap('agent-control').set('command', { action: 'sleep', source: 'button', timestamp: Date.now() })
-  }, [doc])
+  }, [])
 
   const agentAwake = phase !== 'WAITING'
   const isListening = recognitionRef.current !== null

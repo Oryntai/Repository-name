@@ -1,5 +1,10 @@
 const AGENT_NAME = 'AI Assistant'
 
+// Must match AgentOrchestrator CANVAS_BOUNDS
+const BOUNDS = { x: 0, y: 0, w: 1600, h: 900 }
+const SHAPE_W = 200 // approximate note width
+const SHAPE_H = 200 // approximate note height
+
 // Generate a unique tldraw-compatible ID
 function makeId(prefix) {
   const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
@@ -269,30 +274,59 @@ class ActionExecutor {
   }
 
   _computePosition(nearShapeId) {
+    // 1. Near a referenced shape (offset to the right)
     if (nearShapeId) {
       const ref = this.yStore.get(nearShapeId)
       if (ref) {
-        return { x: (ref.x || 0) + 220, y: ref.y || 0 }
+        return this._clamp((ref.x || 0) + 230, ref.y || 0)
       }
     }
 
-    // Find a free position by looking at existing shapes
-    let maxX = 100, maxY = 100
+    // 2. Near the last AI-created shape (keeps AI output clustered)
+    const lastAi = this._findLastAiShape()
+    if (lastAi) {
+      return this._clamp(lastAi.x + 230, lastAi.y + Math.floor(Math.random() * 80) - 40)
+    }
+
+    // 3. Near existing user shapes (so AI content appears close to user work)
+    const userShape = this._findAnyUserShape()
+    if (userShape) {
+      return this._clamp(userShape.x + 230, userShape.y)
+    }
+
+    // 4. Fallback: random position within bounds
+    return this._clamp(
+      BOUNDS.x + 100 + Math.floor(Math.random() * (BOUNDS.w - SHAPE_W - 200)),
+      BOUNDS.y + 100 + Math.floor(Math.random() * (BOUNDS.h - SHAPE_H - 200)),
+    )
+  }
+
+  /** Clamp position to stay within canvas boundary */
+  _clamp(x, y) {
+    return {
+      x: Math.max(BOUNDS.x + 20, Math.min(x, BOUNDS.x + BOUNDS.w - SHAPE_W - 20)),
+      y: Math.max(BOUNDS.y + 20, Math.min(y, BOUNDS.y + BOUNDS.h - SHAPE_H - 20)),
+    }
+  }
+
+  _findLastAiShape() {
+    let last = null
     this.yStore.forEach((record) => {
-      if (record?.typeName === 'shape') {
-        const sx = (record.x || 0) + 220
-        if (sx > maxX) {
-          maxX = sx
-          maxY = record.y || 100
-        }
+      if (record?.typeName === 'shape' && record?.meta?.createdBy === 'ai-agent' && record.type !== 'frame') {
+        last = record
       }
     })
+    return last
+  }
 
-    // Place to the right of the rightmost shape, with some vertical randomness
-    return {
-      x: maxX + 50,
-      y: maxY + Math.floor(Math.random() * 200) - 100,
-    }
+  _findAnyUserShape() {
+    let found = null
+    this.yStore.forEach((record) => {
+      if (record?.typeName === 'shape' && !record?.meta?.createdBy && record.type !== 'frame') {
+        found = record
+      }
+    })
+    return found
   }
 }
 

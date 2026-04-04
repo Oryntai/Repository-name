@@ -6,6 +6,10 @@ const { HiggsClient } = require('./HiggsClient')
 
 const AGENT_NAME = 'AI Assistant'
 
+// Canvas boundary — all AI content placed within this area
+const CANVAS_BOUNDS = { x: 0, y: 0, w: 1600, h: 900 }
+const BOUNDARY_FRAME_ID = 'shape:canvas-boundary'
+
 class AgentOrchestrator {
   constructor(doc) {
     this.doc = doc
@@ -23,6 +27,7 @@ class AgentOrchestrator {
     })
 
     this._setupPresence()
+    this._ensureBoundary()
 
     console.log(`[agent] ${AGENT_NAME} initialized — chat + voice sessions ready`)
   }
@@ -54,15 +59,38 @@ class AgentOrchestrator {
     }, 15000)
   }
 
+  /** Create a visible boundary frame if it doesn't exist yet */
+  _ensureBoundary() {
+    const yStore = this.doc.getMap('tldraw')
+    if (yStore.get(BOUNDARY_FRAME_ID)) return // Already exists
+
+    this.doc.transact(() => {
+      yStore.set(BOUNDARY_FRAME_ID, {
+        id: BOUNDARY_FRAME_ID,
+        typeName: 'shape',
+        type: 'frame',
+        x: CANVAS_BOUNDS.x,
+        y: CANVAS_BOUNDS.y,
+        rotation: 0,
+        index: 'a0',
+        parentId: 'page:page',
+        isLocked: true,
+        opacity: 1,
+        props: {
+          w: CANVAS_BOUNDS.w,
+          h: CANVAS_BOUNDS.h,
+          name: 'Canvas',
+        },
+        meta: { createdBy: 'ai-agent' },
+      })
+    })
+    console.log(`[agent] Canvas boundary created: ${CANVAS_BOUNDS.w}x${CANVAS_BOUNDS.h}`)
+  }
+
   // ========== CHAT SESSION ==========
   // Reads chat + canvas → LLM with tools → creates shapes / sends chat messages
 
   async _onChatTrigger(reason, mentionText) {
-    if (reason === 'sleep_ack') {
-      this.actionExecutor._sendMessage({ text: 'Пока! Засыпаю. Скажите «эй человек» чтобы разбудить.' })
-      return
-    }
-
     console.log(`[agent-chat] Processing: ${reason}`)
 
     const context = this.contextBuilder.build(reason, mentionText)

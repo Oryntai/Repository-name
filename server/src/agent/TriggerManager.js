@@ -1,20 +1,28 @@
 const COOLDOWN_MS = 15000
-const VOICE_COOLDOWN_MS = 5000 // Voice is faster — shorter cooldown
+const VOICE_COOLDOWN_MS = 5000
 const STUCK_TIMEOUT_MS = 60000
 const AGENT_NAME = 'AI Assistant'
 
 const WAKE_WORDS = ['эй человек', 'эй, человек', 'hey human', '@ai']
-const SLEEP_WORDS = ['пока человек', 'пока, человек', 'bye human']
 
 const STATE = { IDLE: 'idle', CALLING: 'calling', COOLDOWN: 'cooldown' }
 
+/**
+ * Two fully independent channels:
+ *
+ * CHAT — fires only when a message contains a wake word. One-shot per message.
+ *        Response goes to chat only.
+ *
+ * VOICE — fires for every transcript in voice-channel.
+ *         The frontend state machine gates what gets sent (wake word → listen → send).
+ *         Response goes to voice-channel only (TTS).
+ */
 class TriggerManager {
   constructor(doc, { onChatTrigger, onVoiceTrigger }) {
     this.doc = doc
     this.onChatTrigger = onChatTrigger
     this.onVoiceTrigger = onVoiceTrigger
 
-    // Separate state machines for chat and voice sessions
     this.chatState = STATE.IDLE
     this.voiceState = STATE.IDLE
     this.chatCooldownTimer = null
@@ -22,16 +30,13 @@ class TriggerManager {
     this.chatStuckTimer = null
     this.voiceStuckTimer = null
 
-    this.isAwake = false
-
     this._observeChat()
     this._observeVoiceChannel()
-    this._observeAgentControl()
 
-    console.log('[trigger] TriggerManager ready (agent sleeping, say "эй человек" to wake)')
+    console.log('[trigger] TriggerManager ready (chat: wake word per-message, voice: frontend-gated)')
   }
 
-  // ========== CHAT SESSION ==========
+  // ========== CHAT SESSION (self-contained) ==========
 
   _observeChat() {
     const yChat = this.doc.getArray('chat')
@@ -50,23 +55,11 @@ class TriggerManager {
   _processChatMessage(msg) {
     const textLower = msg.text.toLowerCase()
 
-    if (SLEEP_WORDS.some((kw) => textLower.includes(kw))) {
-      if (this.isAwake) {
-        this._sleep('chat')
-        this._fireChatImmediate('sleep_ack', msg.text)
-      }
-      return
-    }
-
+    // Chat only responds when a wake word is in the message
     if (WAKE_WORDS.some((kw) => textLower.includes(kw))) {
-      if (!this.isAwake) this._wake('chat')
-      this._fireChatImmediate('wake_word', msg.text)
-      return
+      this._fireChatImmediate('chat_wake', msg.text)
     }
-
-    if (this.isAwake) {
-      this._fireChatImmediate('chat_while_awake', msg.text)
-    }
+    // No wake word → message is ignored by AI. No persistent "awake" state.
   }
 
   _fireChatImmediate(reason, text) {
@@ -103,7 +96,9 @@ class TriggerManager {
       })
   }
 
-  // ========== VOICE SESSION ==========
+  // ========== VOICE SESSION (frontend-gated) ==========
+  // The frontend only sends transcripts AFTER the user says "эй человек"
+  // and gives their command. Every transcript here is a real command.
 
   _observeVoiceChannel() {
     const yVoice = this.doc.getArray('voice-channel')
@@ -112,8 +107,7 @@ class TriggerManager {
       for (const change of event.changes.delta) {
         if (!change.insert) continue
         for (const entry of change.insert) {
-          if (entry.type !== 'transcript') continue // Only process user transcripts
-          if (!this.isAwake) continue
+          if (entry.type !== 'transcript') continue
           this._fireVoiceImmediate(entry)
         }
       }
@@ -152,46 +146,6 @@ class TriggerManager {
         console.error('[trigger-voice] Error:', err.message)
         this.voiceState = STATE.IDLE
       })
-  }
-
-  // ========== AGENT CONTROL (wake/sleep from frontend) ==========
-
-  _observeAgentControl() {
-    const yControl = this.doc.getMap('agent-control')
-    yControl.observe((event) => {
-      for (const [key] of event.changes.keys) {
-        if (key !== 'command') continue
-        const cmd = yControl.get('command')
-        if (!cmd) return
-        console.log(`[trigger] Control command: ${JSON.stringify(cmd)}`)
-
-        if (cmd.action === 'wake' && !this.isAwake) {
-          this._wake(cmd.source || 'voice')
-        } else if (cmd.action === 'sleep' && this.isAwake) {
-          this._sleep(cmd.source || 'voice')
-        }
-      }
-    })
-  }
-
-  // ========== SHARED STATE ==========
-
-  _wake(source) {
-    this.isAwake = true
-    console.log(`[trigger] Agent AWAKE (via ${source})`)
-    this.doc.getMap('agent-control').set('status', { awake: true, since: Date.now() })
-  }
-
-  _sleep(source) {
-    this.isAwake = false
-    clearTimeout(this.chatCooldownTimer)
-    clearTimeout(this.voiceCooldownTimer)
-    clearTimeout(this.chatStuckTimer)
-    clearTimeout(this.voiceStuckTimer)
-    this.chatState = STATE.IDLE
-    this.voiceState = STATE.IDLE
-    console.log(`[trigger] Agent SLEEPING (via ${source})`)
-    this.doc.getMap('agent-control').set('status', { awake: false, since: Date.now() })
   }
 
   destroy() {

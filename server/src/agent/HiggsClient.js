@@ -46,6 +46,7 @@ class HiggsClient {
       if (result.status === 'completed') {
         // V2 response format — try multiple known paths
         const url =
+          result.images?.[0]?.url ||
           result.result?.url ||
           result.result?.images?.[0]?.url ||
           result.output?.url ||
