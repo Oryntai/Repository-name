@@ -51,12 +51,10 @@ class TriggerManager {
     if (msg.timestamp && msg.timestamp < this._initTime) return
 
     const textLower = msg.text.toLowerCase()
+    const isWake = WAKE_WORDS.some((kw) => textLower.includes(kw))
+    const reason = isWake ? 'chat_wake' : 'chat_message'
 
-    // Chat only responds when a wake word is in the message
-    if (WAKE_WORDS.some((kw) => textLower.includes(kw))) {
-      this._fireChatImmediate('chat_wake', msg.text)
-    }
-    // No wake word → message is ignored by AI. No persistent "awake" state.
+    this._fireChatImmediate(reason, msg.text)
   }
 
   _fireChatImmediate(reason, text) {
