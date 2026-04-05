@@ -1,143 +1,117 @@
-# AI Agent — архитектура и поведение
+# AI Agent — Architecture & Behavior
 
-## Роль агента
+## Role
 
-Агент — **третий участник** сессии, не инструмент. Он слушает разговор, видит canvas и вмешивается органично, без явного вызова кнопкой. Будем звать его по имени, его именем будет - "Название агента". Слова "Название Агента" будет триггерить агента на действие. Тоесть - "будить"
-
----
-
-## Как агент слышит
-
-Агент подключается к LiveKit-комнате как участник с флагом `AUDIO_ONLY`.
-
-```
-LiveKit Room
-├── User A (микрофон)
-├── User B (микрофон)
-└── AI Agent (слушает аудио-треки)
-         │
-         ▼
-    VAD (Silero)          — детектор речи, фильтрует тишину
-         │
-         ▼
-    STT (Whisper)         — аудио → текст
-         │
-         ▼
-    Decision Engine       — вмешиваться или нет
-         │
-         ▼
-    LLM (GPT)          — генерация ответа / действия
-         │
-         ▼
-    Action Executor       — пишет в Yjs → обновляет canvas
-```
-
-**Стек:** LiveKit Agents SDK (Python) + Silero VAD + Whisper STT + Claude
+The AI agent is a **third participant** in the brainstorming session. It observes the canvas, listens to voice commands, reads chat messages, and contributes ideas — just like a human teammate.
 
 ---
 
-## Триггеры — когда агент вмешивается
-
-| Триггер | Условие | Приоритет |
-|--------|---------|-----------|
-| Пауза в разговоре | Тишина 4-5 сек + есть незакрытые ноды на canvas | Высокий |
-| Wake word | Прямое обращение по имени агента | Высокий |
-| Зависшая нода | Нода без связей > 2 минут | Средний |
-| Сигнал с canvas | Пользователь нарисовал "?" | Средний |
-| Перегруженный кластер | > 8 нод в кластере без структуры | Низкий |
-| Голосовой жест | Долгое "хмм...", "ну..." — сигнал что застряли | Низкий |
-
-**Правило:** если пользователи активно говорят — агент молчит. Вмешивается только в паузы или по прямому обращению.
-
----
-
-## Контекст canvas — управление токенами
-
-Полный дамп Yjs дорог (~15k токенов). Используем многоуровневый контекст:
+## How the Agent Works
 
 ```
-[Кешируется — меняется редко]
-  Системный промпт + краткое summary всего canvas
-  "Тема: EdTech стартап. Кластеры: монетизация, аудитория, MVP"
-
-[Текущий контекст — меняется часто]  
-  Только ноды в текущем viewport ± отступ
-  ~500-800 токенов
-
-[Дельта — с момента последней реплики]
-  "Только что добавили: [дистрибуция], [партнёрства]"
-```
-
-Anthropic prompt caching — статичная часть не тарифицируется повторно.
-
-**Целевой расход:** ~300 новых токенов/запрос при активном использовании кеша.
-
----
-
-## Компактный формат canvas
-
-```python
-# Не полный Yjs JSON, а читаемая структура:
-"[монетизация] → [подписка] → [freemium]
- [монетизация] → [реклама]
- [незакрыто: целевая аудитория]
- [вопрос: как выйти на B2B?]"
+                    ┌─────────────────────┐
+                    │   Yjs Document      │
+                    │                     │
+                    │  chat[]             │◄── User sends message
+                    │  voice-channel[]    │◄── User says command
+                    │  suggestions[]      │◄── User idle 3s
+                    │  tldraw{}           │◄── Canvas shapes
+                    └─────────┬───────────┘
+                              │ observes
+                    ┌─────────▼───────────┐
+                    │   TriggerManager    │
+                    │                     │
+                    │  • Chat observer    │
+                    │  • Voice observer   │
+                    │  • Suggestion obs.  │
+                    │  • Global lock      │
+                    │  • Cooldown timer   │
+                    └─────────┬───────────┘
+                              │ fires
+                    ┌─────────▼───────────┐
+                    │ AgentOrchestrator   │
+                    │                     │
+                    │  • Chat sessions    │
+                    │  • Voice sessions   │
+                    │  • Suggestion gen.  │
+                    └─────────┬───────────┘
+                              │
+              ┌───────────────┼───────────────┐
+              ▼               ▼               ▼
+     ┌────────────┐  ┌────────────┐  ┌────────────────┐
+     │ContextBuild│  │ LLMClient  │  │ ActionExecutor │
+     │            │  │            │  │                │
+     │ Shapes     │  │ GPT-4o-mini│  │ add_idea       │
+     │ Chat hist. │  │ Tool calls │  │ add_text       │
+     │ Voice hist.│  │ Vision     │  │ connect_ideas  │
+     │ Action log │  │            │  │ generate_image │
+     └────────────┘  └────────────┘  │ edit_drawing   │
+                                     │ edit_text      │
+                                     │ delete_shape   │
+                                     │ group_nodes    │
+                                     └────────────────┘
 ```
 
 ---
 
-## Инструменты агента (Function Calling)
+## Trigger System
 
-```python
-class CanvasFunctions(llm.FunctionContext):
+| Trigger | Source | What Happens |
+|---|---|---|
+| Chat message | Any user sends a message | AI reads canvas + chat, responds with actions |
+| Voice command | User says "Эй человек!" + command | AI sees canvas screenshot + transcript, responds via TTS |
+| Suggestion request | User idle for 3 seconds | AI analyzes canvas screenshot, places ghost card |
+| Suggestion accepted | User clicks accept on ghost card | AI executes the suggested action |
 
-    @llm.ai_callable(description="Добавить идею на canvas")
-    async def add_idea(self, text: str, cluster: str = None):
-        ...
-
-    @llm.ai_callable(description="Связать две идеи стрелкой")
-    async def connect_ideas(self, from_id: str, to_id: str, label: str = None):
-        ...
-
-    @llm.ai_callable(description="Задать уточняющий вопрос на canvas")
-    async def add_question(self, text: str):
-        ...
-
-    @llm.ai_callable(description="Сгруппировать ноды в кластер")
-    async def group_nodes(self, node_ids: list[str], group_name: str):
-        ...
-
-    @llm.ai_callable(description="Ответить голосом без изменения canvas")
-    async def speak_only(self, text: str):
-        ...
-```
+**Global lock:** Only one request processes at a time. Others are dropped until cooldown ends (3s chat, 2s voice).
 
 ---
 
-## Decision Engine — псевдологика
+## Voice State Machine
 
-```python
-async def should_intervene(transcript, canvas_state, silence_duration):
-    if silence_duration < 4:
-        return False                          # люди ещё думают
-    
-    if wake_word_detected(transcript):
-        return True                           # прямой вызов
-    
-    if has_open_questions(canvas_state):
-        return True                           # есть незакрытые вопросы
-    
-    if has_isolated_nodes(canvas_state):
-        return True                           # висящие ноды без связей
-    
-    return False                              # молчим
 ```
+WAITING ──── "Эй человек!" ────▶ TRIGGERED
+   ▲                                  │
+   │                            user speaks
+   │                                  │
+   │                                  ▼
+   └──── TTS finishes ◄──── PROCESSING
+              or timeout        (LLM + actions)
+```
+
+- **WAITING:** SpeechRecognition always on, checking for wake word only. Zero API cost.
+- **TRIGGERED:** Listening for the user's actual command. Trigger sound plays for all users.
+- **PROCESSING:** Command + canvas screenshot sent to LLM. Response played via TTS.
+
+Phase is broadcast to all clients via Yjs `ai-status` map — everyone sees the same AI state.
 
 ---
 
-## Что агент НЕ делает
+## Canvas Context for LLM
 
-- Не перебивает активный разговор
-- Не удаляет и не перемещает существующие ноды
-- Не отвечает на каждую фразу
-- Не требует явного вызова кнопкой
+The agent doesn't send raw Yjs data. ContextBuilder creates a readable text summary:
+
+```
+Canvas shapes:
+- id="shape:abc123" type=draw pos=(100,50) size=200x150
+- id="shape:def456" type=geo pos=(400,200) size=300x250 text="My idea"
+
+Recent user actions (newest last):
+- User1: drew a shape at (100,50)
+- User2: created rectangle at (400,200)
+
+Recent chat:
+- User1: "add more ideas here"
+```
+
+For voice sessions, a canvas screenshot (JPEG, max 800px) is also sent for vision understanding.
+
+---
+
+## What the Agent Does NOT Do
+
+- Does not interrupt active speech (listens only in pauses)
+- Does not delete user content unless explicitly asked
+- Does not respond to every message (cooldown prevents spam)
+- Does not require a button press to activate (wake word is enough)
+- Does not process tentative suggestion shapes (filtered from context)
