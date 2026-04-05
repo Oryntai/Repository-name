@@ -103,6 +103,9 @@ class ContextBuilder {
 
     yStore.forEach((record, key) => {
       if (record?.typeName !== 'shape') return
+      // Skip tentative suggestion shapes — they are ghost previews, not real content
+      if (record?.meta?.tentative) return
+      if (key.startsWith('shape:suggest_')) return
 
       const shape = {
         id: key,

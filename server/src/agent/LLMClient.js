@@ -5,11 +5,17 @@ const SYSTEM_PROMPT = `You are an AI brainstorming assistant named "AI Assistant
 Your role:
 - Contribute useful ideas, questions, and connections during brainstorming sessions
 - Add sticky notes with ideas when you see opportunities to help
+- Add free-form text (add_text) for speech bubbles, labels, dialogue, captions — anything that should feel like part of the drawing
 - Connect related ideas with arrows when relationships are clear
 - Ask clarifying questions to push thinking deeper
 - Generate images to visualize ideas when appropriate
 - Edit text on existing shapes when asked to complete or change text
 - Be concise and helpful — keep sticky note text short (under 40 chars)
+
+IMPORTANT — choosing between add_idea vs add_text:
+- add_idea: creates a sticky note card — use for brainstorming ideas, questions, concepts
+- add_text: places plain text on canvas — use for speech bubbles, dialogue ("Привет!"), labels on drawings, captions, any text that is part of the visual scene
+- When a user says "добавь слова", "пусть говорит", "напиши текст рядом", "подпиши" — use add_text, NOT add_idea
 
 Rules:
 - Only act when you have something genuinely useful to contribute
@@ -26,7 +32,7 @@ const TOOLS = [
     type: 'function',
     function: {
       name: 'add_idea',
-      description: 'Add a sticky note with an idea to the canvas',
+      description: 'Add a sticky note with an idea to the canvas. When user asks for multiple ideas, call this tool MULTIPLE times.',
       parameters: {
         type: 'object',
         properties: {
@@ -39,6 +45,10 @@ const TOOLS = [
           nearShapeId: {
             type: 'string',
             description: 'Place near this shape ID if the idea is related',
+          },
+          insideShapeId: {
+            type: 'string',
+            description: 'Place INSIDE this shape (frame or geo shape). Use when user says "в моем квадрате", "внутри рамки", etc. The sticky note will be positioned within the bounds of the referenced shape.',
           },
         },
         required: ['text'],
@@ -150,6 +160,35 @@ const TOOLS = [
   {
     type: 'function',
     function: {
+      name: 'add_text',
+      description: 'Add free-form text directly on the canvas (not a sticky note). Use for speech bubbles, labels, captions, dialogue, or any text that should appear as part of the drawing rather than as a note.',
+      parameters: {
+        type: 'object',
+        properties: {
+          text: { type: 'string', description: 'The text content' },
+          nearShapeId: { type: 'string', description: 'Place near this shape ID' },
+          insideShapeId: {
+            type: 'string',
+            description: 'Place INSIDE this shape (frame or geo shape). Use when user says "в моем квадрате", "внутри", etc.',
+          },
+          position: {
+            type: 'string',
+            enum: ['right', 'left', 'below', 'above'],
+            description: 'Where to place relative to nearShapeId',
+          },
+          size: {
+            type: 'string',
+            enum: ['s', 'm', 'l', 'xl'],
+            description: 'Text size (default: m)',
+          },
+        },
+        required: ['text'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'send_message',
       description: 'Send a chat message to the users (no canvas changes)',
       parameters: {
@@ -181,7 +220,7 @@ class LLMClient {
       tools: TOOLS,
       tool_choice: 'auto',
       temperature: 0.7,
-      max_tokens: 1024,
+      max_tokens: 4096,
     })
 
     const message = response.choices[0]?.message
@@ -223,6 +262,7 @@ class LLMClient {
 
 You MUST respond with tool calls. Always include a "speak" call with your verbal response.
 If the user asks you to do something on the canvas (draw, add, connect, group, generate image), also include the relevant canvas tool calls.
+IMPORTANT: When the user asks for MULTIPLE items (e.g. "несколько идей", "список", "3 идеи"), you MUST call the tool MULTIPLE times — one call per item. Do NOT combine them into one call.
 
 Rules for "speak" text:
 - 1-3 short sentences, will be read aloud via TTS
@@ -239,7 +279,13 @@ CRITICAL — tool selection:
 - "edit_text": Use when user asks to change, complete, or add TEXT on an existing shape (sticky note, rectangle, etc.). This directly updates the text property. ALWAYS use this for text editing — NEVER use edit_drawing for text changes. The shapeId MUST be copied exactly from the canvas shapes list above.
 - "edit_drawing": Use ONLY when user asks to modify VISUAL parts of their drawing IN-PLACE (e.g. "color the shirt", "make the eyes bigger", "erase the hat"). This edits the canvas screenshot and replaces it. NEVER use for text changes.
 - "generate_image": Use when user asks to ADD new visual elements to the scene (e.g. "draw a body", "add a hat", "generate a sun", "create a tree", "add arms"). This creates a new image and places it relative to existing shapes. ALWAYS specify nearShapeId, position, and relative_scale.
-- "add_idea": Use ONLY for adding NEW text sticky notes. NEVER use for editing existing shapes.
+- "add_idea": Use ONLY for adding NEW brainstorming sticky notes. NEVER use for editing existing shapes. When user asks for MULTIPLE ideas (e.g. "несколько идей", "3 идеи", "список"), call this tool MULTIPLE times — one call per idea!
+- "add_text": Use for speech bubbles, dialogue, labels, captions — text that belongs to the visual scene. When user says "пусть говорит", "добавь слова", "подпиши" — use this, NOT add_idea.
+
+CRITICAL — placing items INSIDE shapes:
+- When user says "в моем квадрате/рамке", "внутри", "в этот бокс" — they want items placed INSIDE a specific shape.
+- Use "insideShapeId" parameter with the exact shape ID of the container. The items will be placed within the container's bounds.
+- Look at the canvas shapes list: find the geo/frame shape that matches what the user is referring to (by type, position, or context from the screenshot).
 
 CRITICAL — spatial awareness for generate_image:
 - Canvas shapes have positions (x,y) and sizes (w×h) listed above. Use these to decide placement and scaling.
@@ -293,7 +339,25 @@ CRITICAL — spatial awareness for generate_image:
           },
         },
       },
-      ...TOOLS.filter((t) => t.function.name !== 'send_message'),
+      ...TOOLS.filter((t) => t.function.name !== 'send_message' && t.function.name !== 'add_text'),
+      // add_text is already in TOOLS, but let's ensure it's included with voice-specific description
+      {
+        type: 'function',
+        function: {
+          name: 'add_text',
+          description: 'Add free-form text on the canvas — for speech bubbles, labels, dialogue, captions. Use when user says "пусть говорит", "добавь слова", "подпиши", etc.',
+          parameters: {
+            type: 'object',
+            properties: {
+              text: { type: 'string', description: 'The text content (e.g. "Привет, мир!")' },
+              nearShapeId: { type: 'string', description: 'Place near this shape ID' },
+              position: { type: 'string', enum: ['right', 'left', 'below', 'above'], description: 'Where to place' },
+              size: { type: 'string', enum: ['s', 'm', 'l', 'xl'], description: 'Text size' },
+            },
+            required: ['text'],
+          },
+        },
+      },
     ]
 
     const response = await this.client.chat.completions.create({
@@ -305,7 +369,7 @@ CRITICAL — spatial awareness for generate_image:
       tools: voiceTools,
       tool_choice: 'required',
       temperature: 0.7,
-      max_tokens: 512,
+      max_tokens: 4096,
     })
 
     const message = response.choices[0]?.message

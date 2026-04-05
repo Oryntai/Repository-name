@@ -54,20 +54,10 @@ const server = http.createServer((req, res) => {
   }
 })
 
-const wss = new WebSocket.Server({ noServer: true })
-
-server.on('upgrade', (req, socket, head) => {
-  if (req.url && req.url.startsWith('/ws')) {
-    wss.handleUpgrade(req, socket, head, (ws) => {
-      wss.emit('connection', ws, req)
-    })
-  } else {
-    socket.destroy()
-  }
-})
+const wss = new WebSocket.Server({ server })
 
 wss.on('connection', (ws, req) => {
-  // Strip /ws prefix if present (frontend connects via /ws path)
+  // Strip /ws prefix if present (production serves via /ws path)
   if (req.url && req.url.startsWith('/ws')) {
     req.url = req.url.replace(/^\/ws/, '') || '/'
   }

@@ -3,7 +3,7 @@ import type { Editor, TLRecord } from 'tldraw'
 import type { WebsocketProvider } from 'y-websocket'
 import type * as Y from 'yjs'
 
-const SYNCED_TYPES = new Set(['document', 'page', 'shape', 'asset'])
+const SYNCED_TYPES = new Set(['document', 'page', 'shape', 'asset', 'binding'])
 
 function isSyncable(record: TLRecord): boolean {
   return SYNCED_TYPES.has(record.typeName)
@@ -23,25 +23,33 @@ export function useCanvasSync(
 
     const yStore = doc.getMap('tldraw')
 
+    const applyRemoteRecords = () => {
+      if (yStore.size === 0) return
+
+      const remoteRecords: TLRecord[] = []
+      yStore.forEach((value) => remoteRecords.push(value as TLRecord))
+
+      const localDocRecords = editor.store.allRecords().filter(isSyncable)
+      const remoteIds = new Set(remoteRecords.map((r) => r.id))
+
+      editor.store.mergeRemoteChanges(() => {
+        const toRemove = localDocRecords
+          .filter((r) => !remoteIds.has(r.id))
+          .map((r) => r.id)
+        if (toRemove.length) editor.store.remove(toRemove)
+        editor.store.put(remoteRecords)
+      })
+
+      console.log(`[sync] Applied ${remoteRecords.length} remote records`)
+    }
+
     const handleSync = (synced: boolean) => {
       if (!synced || didSyncRef.current) return
       didSyncRef.current = true
 
       // --- Initial load ---
       if (yStore.size > 0) {
-        const remoteRecords: TLRecord[] = []
-        yStore.forEach((value) => remoteRecords.push(value as TLRecord))
-
-        const localDocRecords = editor.store.allRecords().filter(isSyncable)
-        const remoteIds = new Set(remoteRecords.map((r) => r.id))
-
-        editor.store.mergeRemoteChanges(() => {
-          const toRemove = localDocRecords
-            .filter((r) => !remoteIds.has(r.id))
-            .map((r) => r.id)
-          if (toRemove.length) editor.store.remove(toRemove)
-          editor.store.put(remoteRecords)
-        })
+        applyRemoteRecords()
       } else {
         doc.transact(() => {
           for (const record of editor.store.allRecords()) {
@@ -51,6 +59,13 @@ export function useCanvasSync(
           }
         })
       }
+
+      // Safety: re-apply after a short delay in case of race conditions
+      setTimeout(() => {
+        if (yStore.size > 0) {
+          applyRemoteRecords()
+        }
+      }, 1000)
 
       // --- Bidirectional sync ---
 

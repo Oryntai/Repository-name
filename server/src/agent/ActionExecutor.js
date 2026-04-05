@@ -75,6 +75,9 @@ class ActionExecutor {
           case 'edit_drawing':
             await this._editDrawing(action.args)
             break
+          case 'add_text':
+            this._addText(action.args)
+            break
           case 'delete_shape':
             this._deleteShape(action.args)
             break
@@ -87,15 +90,29 @@ class ActionExecutor {
     }
   }
 
-  _addIdea({ text, color, nearShapeId }) {
-    const pos = this._computePosition(nearShapeId)
+  _addIdea({ text, color, nearShapeId, insideShapeId }) {
+    const pos = insideShapeId
+      ? this._computePositionInside(insideShapeId)
+      : this._computePosition(nearShapeId)
     const id = makeId('shape')
+
+    const COLOR_MAP = {
+      'yellow': 'yellow',
+      'violet': 'violet',
+      'blue': 'blue',
+      'green': 'green',
+      'orange': 'orange',
+      'red': 'red',
+      'grey': 'grey',
+      'light-blue': 'light-blue',
+    }
+    const geoColor = COLOR_MAP[color] || 'violet'
 
     this.doc.transact(() => {
       this.yStore.set(id, {
         id,
         typeName: 'shape',
-        type: 'note',
+        type: 'geo',
         x: pos.x,
         y: pos.y,
         rotation: 0,
@@ -104,14 +121,20 @@ class ActionExecutor {
         isLocked: false,
         opacity: 1,
         props: {
-          text: text || '',
-          color: color || 'violet',
+          geo: 'rectangle',
+          w: 200,
+          h: 120,
+          dash: 'draw',
           size: 'm',
           font: 'draw',
+          color: geoColor,
+          fill: 'solid',
           align: 'middle',
           verticalAlign: 'middle',
-          growY: 0.00001,
-          fontSizeAdjustment: 0.00001,
+          text: '',
+          label: text || '',
+          labelColor: 'black',
+          growY: 0,
           url: '',
           scale: 1,
         },
@@ -127,6 +150,49 @@ class ActionExecutor {
 
   _addQuestion({ text }) {
     return this._addIdea({ text: `? ${text}`, color: 'red' })
+  }
+
+  _addText({ text, nearShapeId, insideShapeId, position, size }) {
+    const textSize = size || 'l'
+    const imgSize = 200 // approximate text block size for positioning
+    const pos = insideShapeId
+      ? this._computePositionInside(insideShapeId)
+      : position && nearShapeId
+        ? this._computePositionDirectional(nearShapeId, position, imgSize)
+        : this._computePosition(nearShapeId)
+
+    const id = makeId('shape')
+
+    this.doc.transact(() => {
+      this.yStore.set(id, {
+        id,
+        typeName: 'shape',
+        type: 'text',
+        x: pos.x,
+        y: pos.y,
+        rotation: 0,
+        index: nextIndex(),
+        parentId: 'page:page',
+        isLocked: false,
+        opacity: 1,
+        props: {
+          text: text || '',
+          color: 'black',
+          size: textSize,
+          font: 'draw',
+          textAlign: 'start',
+          autoSize: true,
+          scale: 1,
+          w: 300,
+        },
+        meta: { createdBy: 'ai-agent' },
+      })
+    })
+
+    this._log(`added text "${text}" at (${pos.x},${pos.y})`)
+    this._feedback(`Добавил текст: "${text}"`)
+    console.log(`[executor] Added text "${text}" at (${pos.x}, ${pos.y})`)
+    return id
   }
 
   _editText({ shapeId, text }) {
@@ -220,15 +286,30 @@ class ActionExecutor {
       return
     }
 
+    const fromBounds = this._getShapeBounds(fromShape)
+    const toBounds = this._getShapeBounds(toShape)
+
+    // Arrow start/end are relative to arrow's own x,y
+    // Place arrow at midpoint between shapes
+    const arrowX = Math.min(fromBounds.x, toBounds.x)
+    const arrowY = Math.min(fromBounds.y, toBounds.y)
+
+    const startX = (fromBounds.x + fromBounds.w / 2) - arrowX
+    const startY = (fromBounds.y + fromBounds.h / 2) - arrowY
+    const endX = (toBounds.x + toBounds.w / 2) - arrowX
+    const endY = (toBounds.y + toBounds.h / 2) - arrowY
+
     const id = makeId('shape')
+    const bindingFromId = makeId('binding')
+    const bindingToId = makeId('binding')
 
     this.doc.transact(() => {
       this.yStore.set(id, {
         id,
         typeName: 'shape',
         type: 'arrow',
-        x: 0,
-        y: 0,
+        x: arrowX,
+        y: arrowY,
         rotation: 0,
         index: nextIndex(),
         parentId: 'page:page',
@@ -241,8 +322,8 @@ class ActionExecutor {
           color: 'violet',
           labelColor: 'black',
           bend: 0,
-          start: { x: (fromShape.x || 0) + 100, y: (fromShape.y || 0) + 50 },
-          end: { x: (toShape.x || 0), y: (toShape.y || 0) + 50 },
+          start: { x: startX, y: startY },
+          end: { x: endX, y: endY },
           arrowheadStart: 'none',
           arrowheadEnd: 'arrow',
           text: label || '',
@@ -251,6 +332,37 @@ class ActionExecutor {
           scale: 1,
         },
         meta: { createdBy: 'ai-agent' },
+      })
+
+      // Create bindings so the arrow stays attached to shapes
+      this.yStore.set(bindingFromId, {
+        id: bindingFromId,
+        typeName: 'binding',
+        type: 'arrow',
+        fromId: id,
+        toId: fromShapeId,
+        props: {
+          terminal: 'start',
+          normalizedAnchor: { x: 0.5, y: 0.5 },
+          isExact: false,
+          isPrecise: false,
+        },
+        meta: {},
+      })
+
+      this.yStore.set(bindingToId, {
+        id: bindingToId,
+        typeName: 'binding',
+        type: 'arrow',
+        fromId: id,
+        toId: toShapeId,
+        props: {
+          terminal: 'end',
+          normalizedAnchor: { x: 0.5, y: 0.5 },
+          isExact: false,
+          isPrecise: false,
+        },
+        meta: {},
       })
     })
 
@@ -656,6 +768,35 @@ class ActionExecutor {
       x: Math.max(b.x + 5, Math.min(x, b.x + b.w - w - 5)),
       y: Math.max(b.y + 5, Math.min(y, b.y + b.h - h - 5)),
     }
+  }
+
+  /** Place a shape randomly inside a container shape's bounds */
+  _computePositionInside(containerShapeId) {
+    const container = this.yStore.get(containerShapeId)
+    if (!container) return this._computePosition(null)
+
+    const cb = this._getShapeBounds(container)
+    const padding = 20
+    const noteSize = SHAPE_W // 200
+
+    // Count how many AI shapes are already inside this container
+    let countInside = 0
+    this.yStore.forEach((record) => {
+      if (record?.typeName !== 'shape' || !record?.meta?.createdBy) return
+      if (record.x >= cb.x && record.x < cb.x + cb.w && record.y >= cb.y && record.y < cb.y + cb.h) {
+        countInside++
+      }
+    })
+
+    // Lay out in a grid inside the container
+    const cols = Math.max(1, Math.floor((cb.w - padding * 2) / (noteSize + 10)))
+    const row = Math.floor(countInside / cols)
+    const col = countInside % cols
+
+    const x = cb.x + padding + col * (noteSize + 10)
+    const y = cb.y + padding + 30 + row * (noteSize + 10) // +30 for frame header
+
+    return { x, y }
   }
 
   _computePosition(nearShapeId) {

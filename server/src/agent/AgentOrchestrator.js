@@ -57,11 +57,13 @@ class AgentOrchestrator {
 
     // Watch for AI status reset ("пока человек") — clear busy/cooldown
     const yStatus = this.doc.getMap('ai-status')
+    let lastPhase = yStatus.get('phase') || 'WAITING'
     yStatus.observe(() => {
-      const phase = yStatus.get('phase')
-      if (phase === 'WAITING') {
+      const phase = yStatus.get('phase') || 'WAITING'
+      if (phase === 'WAITING' && lastPhase !== 'WAITING') {
         this.triggerManager.forceReset()
       }
+      lastPhase = phase
     })
   }
 
@@ -96,14 +98,12 @@ class AgentOrchestrator {
     const canvasImage = latestTranscript?.image || null
     const canvasImageBounds = latestTranscript?.imageBounds || null
 
-    // Build context with last 4 voice messages
     const canvasContext = this.contextBuilder.buildVoiceContext()
     const { speech, actions } = await this.llmClient.callVoice(transcript, canvasContext, canvasImage)
 
-    // Execute canvas actions if any (add_idea, connect, generate_image, edit_drawing, etc.)
+    // Execute canvas actions if any
     if (actions.length > 0) {
       this._moveCursorNear(actions)
-      // Pass canvas image + bounds so edit_drawing can use them
       this.actionExecutor.canvasImage = canvasImage
       this.actionExecutor.canvasImageBounds = canvasImageBounds
       await this.actionExecutor.execute(actions)
@@ -113,17 +113,14 @@ class AgentOrchestrator {
 
     // Push speech response for frontend TTS
     if (speech.trim()) {
-      yVoice.push([
-        {
-          type: 'response',
-          text: speech,
-          timestamp: Date.now(),
-        },
-      ])
-      // Log the voice response as an AI action
+      yVoice.push([{
+        type: 'response',
+        text: speech,
+        timestamp: Date.now(),
+      }])
       const yLog = this.doc.getArray('action-log')
       yLog.push([{ user: 'AI Assistant', action: `spoke: "${speech.substring(0, 60)}"`, timestamp: Date.now() }])
-      console.log(`[agent-voice] TTS: "${speech.substring(0, 60)}..." | Canvas actions: ${actions.length}`)
+      console.log(`[agent-voice] TTS: "${speech.substring(0, 60)}..."`)
     }
   }
 
@@ -150,7 +147,7 @@ class AgentOrchestrator {
       yStore.set(id, {
         id,
         typeName: 'shape',
-        type: 'note',
+        type: 'geo',
         x: pos.x,
         y: pos.y,
         rotation: 0,
@@ -159,14 +156,20 @@ class AgentOrchestrator {
         isLocked: false,
         opacity: 0.4,
         props: {
-          text: suggestion.text,
-          color: suggestion.color || 'light-blue',
+          geo: 'rectangle',
+          w: 200,
+          h: 100,
+          dash: 'draw',
           size: 'l',
           font: 'sans',
+          color: suggestion.color || 'light-blue',
+          fill: 'solid',
           align: 'middle',
           verticalAlign: 'middle',
-          growY: 0.00001,
-          fontSizeAdjustment: 0.00001,
+          text: '',
+          label: suggestion.text,
+          labelColor: 'black',
+          growY: 0,
           url: '',
           scale: 1,
         },
