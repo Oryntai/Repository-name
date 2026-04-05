@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { type Editor, DefaultSizeStyle, GeoShapeGeoStyle } from 'tldraw'
+import { type Editor, DefaultSizeStyle, DefaultFillStyle, DefaultColorStyle, GeoShapeGeoStyle } from 'tldraw'
 import type { ChatMessage } from '../hooks/useChat'
 import { ChatPanel } from './ChatPanel'
 import './LeftSidebar.css'
@@ -126,7 +126,7 @@ const DIRECT_TOOLS = [
     icon: <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><line x1="4" y1="20" x2="20" y2="4"/></svg>,
   },
   {
-    tool: 'note',
+    tool: 'sticky-note',
     label: 'Sticky Note',
     icon: <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M15.5 3H5a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2V8.5L15.5 3z"/><polyline points="14 3 14 9 21 9"/></svg>,
   },
@@ -183,6 +183,14 @@ export function LeftSidebar({ editor, chat, userName }: LeftSidebarProps) {
 
   const handleDirectTool = (tool: string) => {
     editor?.setCurrentTool(tool)
+  }
+
+  const handleStickyNote = () => {
+    if (!editor) return
+    editor.setStyleForNextShapes(GeoShapeGeoStyle, 'rectangle' as any)
+    editor.setStyleForNextShapes(DefaultFillStyle, 'solid' as any)
+    editor.setStyleForNextShapes(DefaultColorStyle, 'yellow' as any)
+    editor.setCurrentTool('geo')
   }
 
   const handleAddText = (size: 'xl' | 'l' | 'm' | 's') => {
@@ -243,7 +251,7 @@ export function LeftSidebar({ editor, chat, userName }: LeftSidebarProps) {
                     <button
                       key={t.tool}
                       className="shape-card"
-                      onClick={() => handleDirectTool(t.tool)}
+                      onClick={() => t.tool === 'sticky-note' ? handleStickyNote() : handleDirectTool(t.tool)}
                       title={t.label}
                     >
                       <div className="shape-card-icon">{t.icon}</div>
