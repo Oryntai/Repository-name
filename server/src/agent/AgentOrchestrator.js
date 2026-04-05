@@ -79,11 +79,12 @@ class AgentOrchestrator {
   async _onVoiceTrigger(transcript, userName) {
     console.log(`[agent-voice] Processing transcript from ${userName}: "${transcript}"`)
 
-    // Get canvas screenshot if available (from the latest voice-channel entry)
+    // Get canvas screenshot + bounds if available (from the latest voice-channel entry)
     const yVoice = this.doc.getArray('voice-channel')
     const allEntries = yVoice.toArray()
     const latestTranscript = allEntries.filter((e) => e.type === 'transcript').pop()
     const canvasImage = latestTranscript?.image || null
+    const canvasImageBounds = latestTranscript?.imageBounds || null
 
     // Build context with last 4 voice messages
     const canvasContext = this.contextBuilder.buildVoiceContext()
@@ -92,10 +93,12 @@ class AgentOrchestrator {
     // Execute canvas actions if any (add_idea, connect, generate_image, edit_drawing, etc.)
     if (actions.length > 0) {
       this._moveCursorNear(actions)
-      // Pass canvas image so edit_drawing can use it
+      // Pass canvas image + bounds so edit_drawing can use them
       this.actionExecutor.canvasImage = canvasImage
+      this.actionExecutor.canvasImageBounds = canvasImageBounds
       await this.actionExecutor.execute(actions)
       this.actionExecutor.canvasImage = null
+      this.actionExecutor.canvasImageBounds = null
     }
 
     // Push speech response for frontend TTS

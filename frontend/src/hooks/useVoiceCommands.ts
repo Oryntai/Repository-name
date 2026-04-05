@@ -282,9 +282,9 @@ export function useVoiceCommands(
   }
 
   async function captureAndSend(yjsDoc: Y.Doc, transcript: string) {
-    let image: string | null = null
+    let capture: { image: string; bounds: { x: number; y: number; w: number; h: number } } | null = null
     try {
-      image = await captureCanvas()
+      capture = await captureCanvas()
     } catch (err) {
       console.warn('[voice] Canvas capture failed:', err)
     }
@@ -296,15 +296,18 @@ export function useVoiceCommands(
       user: userName,
       timestamp: Date.now(),
     }
-    if (image) (entry as any).image = image
+    if (capture) {
+      ;(entry as any).image = capture.image
+      ;(entry as any).imageBounds = capture.bounds
+    }
 
     yVoice.push([entry])
-    console.log(`[voice] Transcript sent (image: ${image ? 'yes' : 'no'})`)
+    console.log(`[voice] Transcript sent (image: ${capture ? 'yes' : 'no'})`)
   }
 
   // ========== CANVAS SCREENSHOT (for vision) ==========
 
-  async function captureCanvas(): Promise<string | null> {
+  async function captureCanvas(): Promise<{ image: string; bounds: { x: number; y: number; w: number; h: number } } | null> {
     const ed = editorRef.current
     if (!ed) return null
 
@@ -312,6 +315,11 @@ export function useVoiceCommands(
     if (shapeIds.length === 0) return null
 
     try {
+      // Compute the bounding box of all shapes on the page
+      const allBounds = ed.getCurrentPageBounds()
+      if (!allBounds) return null
+      const bounds = { x: allBounds.x, y: allBounds.y, w: allBounds.w, h: allBounds.h }
+
       // tldraw v2.4: getSvg returns an SVG element
       const svg = await (ed as any).getSvg(shapeIds)
       if (!svg) return null
@@ -320,24 +328,45 @@ export function useVoiceCommands(
       const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' })
       const url = URL.createObjectURL(svgBlob)
 
-      return await new Promise<string | null>((resolve) => {
+      return await new Promise<{ image: string; bounds: { x: number; y: number; w: number; h: number } } | null>((resolve) => {
         const img = new Image()
         img.onload = () => {
           // Scale down to save tokens — 800px max dimension
           const scale = Math.min(1, 800 / Math.max(img.width, img.height))
-          const w = Math.round(img.width * scale)
-          const h = Math.round(img.height * scale)
+          const origW = Math.round(img.width * scale)
+          const origH = Math.round(img.height * scale)
 
+          // Pad to square so OpenAI images.edit (1024x1024) preserves spatial positions
+          const size = Math.max(origW, origH)
           const canvas = document.createElement('canvas')
-          canvas.width = w
-          canvas.height = h
+          canvas.width = size
+          canvas.height = size
           const ctx = canvas.getContext('2d')!
           ctx.fillStyle = '#ffffff'
-          ctx.fillRect(0, 0, w, h)
-          ctx.drawImage(img, 0, 0, w, h)
+          ctx.fillRect(0, 0, size, size)
+          // Center the drawing in the square canvas
+          const offsetX = Math.round((size - origW) / 2)
+          const offsetY = Math.round((size - origH) / 2)
+          ctx.drawImage(img, 0, 0, origW, origH, offsetX, offsetY, origW, origH)
 
           URL.revokeObjectURL(url)
-          resolve(canvas.toDataURL('image/jpeg', 0.6))
+
+          // Adjust bounds to account for padding: the square image covers a larger area
+          // than the original shapes. We need to expand the bounds to match.
+          const pixelsPerUnit = origW / bounds.w // or origH / bounds.h — same scale
+          const padXUnits = offsetX / pixelsPerUnit
+          const padYUnits = offsetY / pixelsPerUnit
+          const squareBounds = {
+            x: bounds.x - padXUnits,
+            y: bounds.y - padYUnits,
+            w: size / pixelsPerUnit,
+            h: size / pixelsPerUnit,
+          }
+
+          resolve({
+            image: canvas.toDataURL('image/jpeg', 0.6),
+            bounds: squareBounds,
+          })
         }
         img.onerror = () => {
           URL.revokeObjectURL(url)

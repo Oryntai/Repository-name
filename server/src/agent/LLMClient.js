@@ -100,10 +100,15 @@ const TOOLS = [
         type: 'object',
         properties: {
           prompt: { type: 'string', description: 'Image generation prompt' },
-          nearShapeId: { type: 'string', description: 'Place near this shape ID' },
+          nearShapeId: { type: 'string', description: 'Place near this shape ID. The generated image will be positioned relative to this shape.' },
+          position: {
+            type: 'string',
+            enum: ['right', 'left', 'below', 'above'],
+            description: 'Where to place the image relative to nearShapeId. Use "below" for body parts under a head, "above" for hats/hair, "right"/"left" for side-by-side placement. Default: "right".',
+          },
           relative_scale: {
             type: 'number',
-            description: 'Size relative to existing drawings on canvas. 1.0 = same size as the drawing. Examples: ant next to a person = 0.15, sun in a scene = 0.5, tree next to a person = 1.3, house behind a person = 1.5. Range: 0.1 to 3.0.',
+            description: 'Size relative to the referenced shape (nearShapeId). 1.0 = same size as that shape. For body below head: 2.0-2.5. For hat above head: 0.4. For arm beside body: 0.8. Range: 0.1 to 3.0.',
           },
         },
         required: ['prompt'],
@@ -196,14 +201,21 @@ Rules for "speak" text:
 - IMPORTANT: All shapes you create MUST be placed inside the canvas page boundary. Never place anything outside the visible page area.
 
 CRITICAL — tool selection:
-- "edit_drawing": Use when user asks to MODIFY their existing drawing (e.g. "add hair", "draw eyes", "color the shirt"). This edits the canvas screenshot directly.
-- "generate_image": Use ONLY for creating a brand-new standalone image (e.g. "generate a sun", "create a tree"). NEVER use this to modify existing drawings.
+- "edit_drawing": Use ONLY when user asks to modify EXISTING parts of their drawing IN-PLACE (e.g. "color the shirt", "make the eyes bigger", "erase the hat"). This edits the canvas screenshot and replaces it.
+- "generate_image": Use when user asks to ADD new elements to the scene (e.g. "draw a body", "add a hat", "generate a sun", "create a tree", "add arms"). This creates a new image and places it relative to existing shapes. ALWAYS specify nearShapeId, position, and relative_scale.
 - "add_idea": Use ONLY for text sticky notes with brainstorming ideas. NEVER use for drawing requests.
 
-CRITICAL — sizing for generate_image:
-- Always set "relative_scale" to size the generated image proportionally to the existing drawing.
-- Think about real-world proportions: an ant next to a person → 0.15, a cat → 0.3, a sun in the sky → 0.5, a tree → 1.3, a house → 1.5.
-- If the user's drawing is small, the additions should be proportionally small. If large, proportionally large.`
+CRITICAL — spatial awareness for generate_image:
+- Canvas shapes have positions (x,y) and sizes (w×h) listed above. Use these to decide placement and scaling.
+- ALWAYS set "nearShapeId" to the shape the new image should attach to.
+- ALWAYS set "position" to control placement: "below" for body under head, "above" for hair/hat on head, "right"/"left" for side placement.
+- ALWAYS set "relative_scale" based on the referenced shape's size and real-world proportions:
+  - Body below a head → 2.0-2.5 (bodies are bigger than heads)
+  - Hair/hat above head → 0.3-0.5
+  - Arms beside body → 0.8
+  - Legs below body → 1.2
+  - Small accessory → 0.2-0.4
+  - Tree next to a person → 1.3, house → 1.5, sun → 0.5, ant → 0.15`
 
     // Build user message content (text + optional image)
     const userContent = []

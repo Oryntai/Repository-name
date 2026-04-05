@@ -28,6 +28,7 @@ class ActionExecutor {
     this.yChat = doc.getArray('chat')
     this.higgsClient = higgsClient
     this.canvasImage = null // set per-request by orchestrator
+    this.canvasImageBounds = null // capture bounds from frontend
   }
 
   async execute(actions) {
@@ -209,7 +210,7 @@ class ActionExecutor {
     console.log(`[executor] Sent chat: "${text}"`)
   }
 
-  async _generateImage({ prompt, nearShapeId, relative_scale }) {
+  async _generateImage({ prompt, nearShapeId, position, relative_scale }) {
     if (!this.higgsClient) {
       this._sendMessage({ text: `I'd like to generate an image for "${prompt}" but image generation is not configured.` })
       return
@@ -231,13 +232,25 @@ class ActionExecutor {
         return
       }
 
-      // Smart sizing: scale relative to existing drawings on canvas
-      const drawingBounds = this._getDrawingBounds()
+      // Smart sizing: scale relative to the reference shape (or canvas if no reference)
+      const refShape = nearShapeId ? this.yStore.get(nearShapeId) : null
+      const refBounds = refShape ? this._getShapeBounds(refShape) : null
       const scale = Math.max(0.1, Math.min(3.0, relative_scale || 1.0))
-      const baseSize = Math.max(drawingBounds.w, drawingBounds.h)
-      const imgSize = Math.round(Math.max(80, Math.min(800, baseSize * scale)))
 
-      const pos = this._computePosition(nearShapeId)
+      let imgSize
+      if (refBounds) {
+        // Size relative to the reference shape
+        const refSize = Math.max(refBounds.w, refBounds.h)
+        imgSize = Math.round(Math.max(40, Math.min(800, refSize * scale)))
+      } else {
+        // Fallback: size relative to overall drawings
+        const drawingBounds = this._getDrawingBounds()
+        const baseSize = Math.max(drawingBounds.w, drawingBounds.h)
+        imgSize = Math.round(Math.max(80, Math.min(800, baseSize * scale)))
+      }
+
+      // Compute position using directional placement
+      const pos = this._computePositionDirectional(nearShapeId, position, imgSize)
       const assetId = makeId('asset')
       const shapeId = makeId('shape')
 
@@ -282,7 +295,7 @@ class ActionExecutor {
         })
       })
 
-      console.log(`[executor] Generated image "${prompt}" at ${imgSize}x${imgSize} (scale=${scale})`)
+      console.log(`[executor] Generated image "${prompt}" at (${pos.x},${pos.y}) ${imgSize}x${imgSize} (scale=${scale}, position=${position || 'default'})`)
     } catch (err) {
       console.error('[executor] Image generation error:', err.stack || err.message)
       this._sendMessage({ text: `Image generation failed: ${err.message}` })
@@ -333,8 +346,9 @@ class ActionExecutor {
         return
       }
 
-      // Place the edited image on the canvas, covering the original drawing area
-      const bounds = this._getDrawingBounds()
+      // Place the edited image on the canvas, covering the original capture area
+      // Use frontend capture bounds (matches the screenshot exactly) or fall back to computed bounds
+      const bounds = this.canvasImageBounds || this._getDrawingBounds()
       const assetId = makeId('asset')
       const shapeId = makeId('shape')
 
@@ -449,6 +463,83 @@ class ActionExecutor {
     } catch (err) {
       console.error('[executor] Image download failed:', err.message)
       return null
+    }
+  }
+
+  /** Get bounding box of a single shape */
+  _getShapeBounds(record) {
+    const sx = record.x || 0
+    const sy = record.y || 0
+
+    if (record.type === 'draw') {
+      let minX = 0, minY = 0, maxX = 0, maxY = 0
+      const segments = record.props?.segments
+      if (segments && Array.isArray(segments)) {
+        minX = Infinity; minY = Infinity; maxX = -Infinity; maxY = -Infinity
+        for (const seg of segments) {
+          if (!seg.points) continue
+          for (const pt of seg.points) {
+            minX = Math.min(minX, pt.x || 0)
+            minY = Math.min(minY, pt.y || 0)
+            maxX = Math.max(maxX, pt.x || 0)
+            maxY = Math.max(maxY, pt.y || 0)
+          }
+        }
+      }
+      return { x: sx + minX, y: sy + minY, w: Math.max(1, maxX - minX), h: Math.max(1, maxY - minY) }
+    }
+
+    const w = record.props?.w || 200
+    const h = record.props?.h || 200
+    return { x: sx, y: sy, w, h }
+  }
+
+  /** Position a new shape relative to a reference shape with directional placement */
+  _computePositionDirectional(nearShapeId, position, imgSize) {
+    if (!nearShapeId || !position) {
+      return this._computePosition(nearShapeId)
+    }
+
+    const ref = this.yStore.get(nearShapeId)
+    if (!ref) {
+      return this._computePosition(nearShapeId)
+    }
+
+    const rb = this._getShapeBounds(ref)
+    // Center the new image relative to the reference shape's center
+    const refCenterX = rb.x + rb.w / 2
+    let x, y
+
+    switch (position) {
+      case 'below':
+        x = refCenterX - imgSize / 2
+        y = rb.y + rb.h + 5 // small gap
+        break
+      case 'above':
+        x = refCenterX - imgSize / 2
+        y = rb.y - imgSize - 5
+        break
+      case 'left':
+        x = rb.x - imgSize - 5
+        y = rb.y + rb.h / 2 - imgSize / 2
+        break
+      case 'right':
+        x = rb.x + rb.w + 5
+        y = rb.y + rb.h / 2 - imgSize / 2
+        break
+      default:
+        return this._computePosition(nearShapeId)
+    }
+
+    return this._clampXY(x, y, imgSize, imgSize)
+  }
+
+  /** Clamp position for a shape of given size to stay within page bounds */
+  _clampXY(x, y, w, h) {
+    const b = this._getPageBounds()
+    return {
+      x: Math.max(b.x + 5, Math.min(x, b.x + b.w - w - 5)),
+      y: Math.max(b.y + 5, Math.min(y, b.y + b.h - h - 5)),
     }
   }
 

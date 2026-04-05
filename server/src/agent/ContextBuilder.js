@@ -15,7 +15,8 @@ class ContextBuilder {
       for (const s of shapes) {
         const text = s.text ? ` "${s.text}"` : ''
         const color = s.color ? ` color:${s.color}` : ''
-        prompt += `- [${s.id}] ${s.type}${text} at (${Math.round(s.x)},${Math.round(s.y)})${color}\n`
+        const size = s.w && s.h ? ` size ${s.w}x${s.h}` : ''
+        prompt += `- [${s.id}] ${s.type}${text} at (${Math.round(s.x)},${Math.round(s.y)})${size}${color}\n`
       }
     } else {
       prompt += 'Canvas is empty.\n'
@@ -47,7 +48,8 @@ class ContextBuilder {
       prompt += 'Canvas shapes:\n'
       for (const s of shapes) {
         const text = s.text ? ` "${s.text}"` : ''
-        prompt += `- [${s.id}] ${s.type}${text} at (${Math.round(s.x)},${Math.round(s.y)})\n`
+        const size = s.w && s.h ? ` size ${s.w}x${s.h}` : ''
+        prompt += `- [${s.id}] ${s.type}${text} at (${Math.round(s.x)},${Math.round(s.y)})${size}\n`
       }
     } else {
       prompt += 'Canvas is empty.\n'
@@ -87,8 +89,33 @@ class ContextBuilder {
         type: record.type,
         x: record.x || 0,
         y: record.y || 0,
+        w: 0,
+        h: 0,
         text: null,
         color: null,
+      }
+
+      // Compute dimensions
+      if (record.type === 'draw') {
+        // Draw shapes: compute bounds from segment points
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+        const segments = record.props?.segments
+        if (segments && Array.isArray(segments)) {
+          for (const seg of segments) {
+            if (!seg.points) continue
+            for (const pt of seg.points) {
+              minX = Math.min(minX, pt.x || 0)
+              minY = Math.min(minY, pt.y || 0)
+              maxX = Math.max(maxX, pt.x || 0)
+              maxY = Math.max(maxY, pt.y || 0)
+            }
+          }
+        }
+        shape.w = maxX > minX ? Math.round(maxX - minX) : 0
+        shape.h = maxY > minY ? Math.round(maxY - minY) : 0
+      } else {
+        shape.w = Math.round(record.props?.w || 0)
+        shape.h = Math.round(record.props?.h || 0)
       }
 
       // Extract text from various shape types
