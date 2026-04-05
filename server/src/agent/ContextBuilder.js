@@ -6,6 +6,7 @@ class ContextBuilder {
   build(triggerReason, mentionText = null) {
     const shapes = this._getShapes()
     const chat = this._getRecentChat(10)
+    const actions = this._getRecentActions(15)
 
     let prompt = ''
 
@@ -13,13 +14,21 @@ class ContextBuilder {
     if (shapes.length > 0) {
       prompt += 'Canvas shapes:\n'
       for (const s of shapes) {
-        const text = s.text ? ` "${s.text}"` : ''
-        const color = s.color ? ` color:${s.color}` : ''
-        const size = s.w && s.h ? ` size ${s.w}x${s.h}` : ''
-        prompt += `- [${s.id}] ${s.type}${text} at (${Math.round(s.x)},${Math.round(s.y)})${size}${color}\n`
+        const text = s.text ? ` text="${s.text}"` : ''
+        const color = s.color ? ` color=${s.color}` : ''
+        const size = s.w && s.h ? ` size=${s.w}x${s.h}` : ''
+        prompt += `- id="${s.id}" type=${s.type} pos=(${Math.round(s.x)},${Math.round(s.y)})${size}${color}${text}\n`
       }
     } else {
       prompt += 'Canvas is empty.\n'
+    }
+
+    // Recent user actions — what users have been doing
+    if (actions.length > 0) {
+      prompt += '\nRecent user actions (newest last):\n'
+      for (const a of actions) {
+        prompt += `- ${a.user}: ${a.action}\n`
+      }
     }
 
     // Recent chat
@@ -32,7 +41,9 @@ class ContextBuilder {
 
     // Trigger context
     prompt += `\nTrigger: ${triggerReason}`
-    if (mentionText) {
+    if (triggerReason === 'suggestion_accepted') {
+      prompt += `\nThe user ACCEPTED your suggestion: "${mentionText}". Now EXECUTE it — use generate_image to create the visual, or add_idea/connect_ideas as needed. Do NOT just send a chat message — actually create the content on the canvas.`
+    } else if (mentionText) {
       prompt += `\nUser message to you: "${mentionText}"`
     }
 
@@ -42,17 +53,26 @@ class ContextBuilder {
   /** Canvas + recent voice conversation. Used by voice session. */
   buildVoiceContext() {
     const shapes = this._getShapes()
+    const actions = this._getRecentActions(10)
     let prompt = ''
 
     if (shapes.length > 0) {
       prompt += 'Canvas shapes:\n'
       for (const s of shapes) {
-        const text = s.text ? ` "${s.text}"` : ''
-        const size = s.w && s.h ? ` size ${s.w}x${s.h}` : ''
-        prompt += `- [${s.id}] ${s.type}${text} at (${Math.round(s.x)},${Math.round(s.y)})${size}\n`
+        const text = s.text ? ` text="${s.text}"` : ''
+        const size = s.w && s.h ? ` size=${s.w}x${s.h}` : ''
+        prompt += `- id="${s.id}" type=${s.type} pos=(${Math.round(s.x)},${Math.round(s.y)})${size}${text}\n`
       }
     } else {
       prompt += 'Canvas is empty.\n'
+    }
+
+    // Recent user actions
+    if (actions.length > 0) {
+      prompt += '\nRecent user actions (newest last):\n'
+      for (const a of actions) {
+        prompt += `- ${a.user}: ${a.action}\n`
+      }
     }
 
     // Last 4 voice-channel entries as conversation memory
@@ -130,6 +150,16 @@ class ContextBuilder {
     })
 
     return shapes
+  }
+
+  _getRecentActions(count) {
+    try {
+      const yLog = this.doc.getArray('action-log')
+      const all = yLog.toArray()
+      return all.slice(-count)
+    } catch {
+      return []
+    }
   }
 
   _getRecentChat(count) {

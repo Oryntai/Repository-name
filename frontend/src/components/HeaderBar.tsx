@@ -24,6 +24,7 @@ interface HeaderBarProps {
   isListening: boolean
   isSpeaking: boolean
   phase: 'WAITING' | 'TRIGGERED' | 'PROCESSING'
+  triggeredBy: string
   onToggleAgent: () => void
 }
 
@@ -39,6 +40,7 @@ export function HeaderBar({
   isListening,
   isSpeaking,
   phase,
+  triggeredBy,
   onToggleAgent,
 }: HeaderBarProps) {
   const [exportOpen, setExportOpen] = useState(false)
@@ -128,9 +130,9 @@ export function HeaderBar({
         >
           <span className="hdr-ai-dot" />
           <span>{
-            isSpeaking ? 'AI speaking...'
-            : phase === 'PROCESSING' ? 'AI thinking...'
-            : phase === 'TRIGGERED' ? 'AI listening...'
+            isSpeaking ? `AI speaking${triggeredBy ? ` to ${triggeredBy}` : ''}...`
+            : phase === 'PROCESSING' ? `AI thinking${triggeredBy ? ` for ${triggeredBy}` : ''}...`
+            : phase === 'TRIGGERED' ? `AI listening to ${triggeredBy || '...'}`
             : 'AI off'
           }</span>
           {isListening && phase === 'WAITING' && <span className="hdr-ai-ear" title="Keyword spotter active">🎤</span>}

@@ -1,5 +1,5 @@
-const COOLDOWN_MS = 15000
-const VOICE_COOLDOWN_MS = 5000
+const COOLDOWN_MS = 3000
+const VOICE_COOLDOWN_MS = 2000
 const STUCK_TIMEOUT_MS = 60000
 const AGENT_NAME = 'AI Assistant'
 
@@ -11,10 +11,11 @@ const WAKE_WORDS = ['эй человек', 'эй, человек', 'hey human', 
  * The second caller is ignored — they must re-trigger after the first completes.
  */
 class TriggerManager {
-  constructor(doc, { onChatTrigger, onVoiceTrigger }) {
+  constructor(doc, { onChatTrigger, onVoiceTrigger, onSuggestionTrigger }) {
     this.doc = doc
     this.onChatTrigger = onChatTrigger
     this.onVoiceTrigger = onVoiceTrigger
+    this.onSuggestionTrigger = onSuggestionTrigger
 
     // Global lock — only one request at a time across both channels
     this.busy = false
@@ -26,8 +27,9 @@ class TriggerManager {
 
     this._observeChat()
     this._observeVoiceChannel()
+    this._observeSuggestions()
 
-    console.log('[trigger] TriggerManager ready (chat: wake word per-message, voice: frontend-gated)')
+    console.log('[trigger] TriggerManager ready (chat + voice + suggestions)')
   }
 
   // ========== CHAT SESSION (self-contained) ==========
@@ -111,6 +113,60 @@ class TriggerManager {
       })
   }
 
+  // ========== TENTATIVE SUGGESTIONS ==========
+
+  _observeSuggestions() {
+    const ySuggestions = this.doc.getArray('suggestions')
+    ySuggestions.observe((event) => {
+      if (event.changes.delta.length === 0) return
+      for (const change of event.changes.delta) {
+        if (!change.insert) continue
+        for (const entry of change.insert) {
+          if (entry.timestamp && entry.timestamp < this._initTime) continue
+          if (entry.type === 'request') {
+            this._fireSuggestion(entry)
+          } else if (entry.type === 'accepted') {
+            this._fireAcceptedSuggestion(entry)
+          }
+        }
+      }
+    })
+  }
+
+  _fireSuggestion(entry) {
+    if (this.busy) {
+      console.log('[trigger-suggest] Skipping — agent is busy')
+      return
+    }
+
+    this._lock()
+    console.log('[trigger-suggest] Firing suggestion request')
+
+    this.onSuggestionTrigger(entry.image)
+      .then(() => this._unlock(COOLDOWN_MS))
+      .catch((err) => {
+        console.error('[trigger-suggest] Error:', err.message)
+        this._unlock(0)
+      })
+  }
+
+  _fireAcceptedSuggestion(entry) {
+    // Force through — user explicitly accepted, override any cooldown/busy state
+    clearTimeout(this.cooldownTimer)
+    clearTimeout(this.stuckTimer)
+    this.busy = false
+
+    this._lock()
+    console.log(`[trigger-suggest] Executing accepted: "${entry.text}"`)
+
+    this.onChatTrigger('suggestion_accepted', entry.text)
+      .then(() => this._unlock(COOLDOWN_MS))
+      .catch((err) => {
+        console.error('[trigger-suggest] Accepted error:', err.message)
+        this._unlock(0)
+      })
+  }
+
   _lock() {
     this.busy = true
     clearTimeout(this.cooldownTimer)
@@ -133,6 +189,13 @@ class TriggerManager {
     } else {
       this.busy = false
     }
+  }
+
+  forceReset() {
+    clearTimeout(this.cooldownTimer)
+    clearTimeout(this.stuckTimer)
+    this.busy = false
+    console.log('[trigger] Force reset — ready immediately')
   }
 
   destroy() {

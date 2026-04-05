@@ -8,6 +8,7 @@ Your role:
 - Connect related ideas with arrows when relationships are clear
 - Ask clarifying questions to push thinking deeper
 - Generate images to visualize ideas when appropriate
+- Edit text on existing shapes when asked to complete or change text
 - Be concise and helpful — keep sticky note text short (under 40 chars)
 
 Rules:
@@ -15,7 +16,9 @@ Rules:
 - Don't repeat ideas already on the canvas
 - When responding to a direct mention, address the user's request specifically
 - You can use multiple tools in a single response if needed
-- Keep chat messages brief and natural
+- Keep chat messages brief and natural. ALWAYS respond in the same language the user writes in (Russian if they write Russian, English if English)
+- When users ask to edit, complete, or change text on existing shapes, use edit_text with the shape ID from the canvas shapes list. NEVER use add_idea for this — find the existing shape and update it.
+- Shape IDs are listed like [shape:abc123]. When referencing a shape, ALWAYS copy the EXACT full ID including "shape:" prefix. NEVER invent IDs.
 - IMPORTANT: All content you create MUST be placed inside the canvas page boundary. Never place shapes outside the visible page area.`
 
 const TOOLS = [
@@ -118,6 +121,35 @@ const TOOLS = [
   {
     type: 'function',
     function: {
+      name: 'edit_text',
+      description: 'Edit/replace the text content of an existing shape on the canvas (sticky note, geo shape, text, etc.). Use this when the user asks to change, complete, or add text to a shape that is already on the canvas.',
+      parameters: {
+        type: 'object',
+        properties: {
+          shapeId: { type: 'string', description: 'The ID of the shape to edit (from the canvas shapes list)' },
+          text: { type: 'string', description: 'The new full text content for the shape. This REPLACES existing text entirely — include any original text you want to keep.' },
+        },
+        required: ['shapeId', 'text'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'delete_shape',
+      description: 'Delete a shape from the canvas. Use when the user asks to remove, delete, or clear a specific shape.',
+      parameters: {
+        type: 'object',
+        properties: {
+          shapeId: { type: 'string', description: 'The exact ID of the shape to delete (copy from canvas shapes list)' },
+        },
+        required: ['shapeId'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'send_message',
       description: 'Send a chat message to the users (no canvas changes)',
       parameters: {
@@ -200,10 +232,14 @@ Rules for "speak" text:
 - If you see drawings on the canvas, describe what you actually see
 - IMPORTANT: All shapes you create MUST be placed inside the canvas page boundary. Never place anything outside the visible page area.
 
+CRITICAL — shape IDs:
+- Shape IDs are listed in the canvas context like [shape:abc123]. When using any tool that takes a shapeId, copy the EXACT full ID including the "shape:" prefix. NEVER invent or guess IDs.
+
 CRITICAL — tool selection:
-- "edit_drawing": Use ONLY when user asks to modify EXISTING parts of their drawing IN-PLACE (e.g. "color the shirt", "make the eyes bigger", "erase the hat"). This edits the canvas screenshot and replaces it.
-- "generate_image": Use when user asks to ADD new elements to the scene (e.g. "draw a body", "add a hat", "generate a sun", "create a tree", "add arms"). This creates a new image and places it relative to existing shapes. ALWAYS specify nearShapeId, position, and relative_scale.
-- "add_idea": Use ONLY for text sticky notes with brainstorming ideas. NEVER use for drawing requests.
+- "edit_text": Use when user asks to change, complete, or add TEXT on an existing shape (sticky note, rectangle, etc.). This directly updates the text property. ALWAYS use this for text editing — NEVER use edit_drawing for text changes. The shapeId MUST be copied exactly from the canvas shapes list above.
+- "edit_drawing": Use ONLY when user asks to modify VISUAL parts of their drawing IN-PLACE (e.g. "color the shirt", "make the eyes bigger", "erase the hat"). This edits the canvas screenshot and replaces it. NEVER use for text changes.
+- "generate_image": Use when user asks to ADD new visual elements to the scene (e.g. "draw a body", "add a hat", "generate a sun", "create a tree", "add arms"). This creates a new image and places it relative to existing shapes. ALWAYS specify nearShapeId, position, and relative_scale.
+- "add_idea": Use ONLY for adding NEW text sticky notes. NEVER use for editing existing shapes.
 
 CRITICAL — spatial awareness for generate_image:
 - Canvas shapes have positions (x,y) and sizes (w×h) listed above. Use these to decide placement and scaling.
@@ -300,6 +336,54 @@ CRITICAL — spatial awareness for generate_image:
 
     console.log(`[llm-voice] Speech: "${speech.substring(0, 60)}..." | Actions: ${actions.map((a) => a.name).join(', ') || 'none'}`)
     return { speech, actions }
+  }
+
+  /**
+   * Tentative suggestion — analyze canvas screenshot and suggest one idea.
+   * Returns { text, color } or null.
+   */
+  async callSuggestion(canvasImage, canvasContext) {
+    console.log(`[llm-suggest] Calling ${this.model} for tentative suggestion`)
+
+    const response = await this.client.chat.completions.create({
+      model: this.model,
+      messages: [
+        {
+          role: 'system',
+          content: `You are an AI brainstorming assistant observing a collaborative canvas. The user just stopped drawing. Look at what's on the canvas and suggest ONE short idea that would complement or extend their work.
+
+Rules:
+- Reply with ONLY a JSON object: {"text": "your idea", "color": "light-blue"}
+- "text" must be under 35 characters — a short, actionable idea
+- "color" must be one of: yellow, violet, blue, green, orange, red, grey, light-blue
+- Pick a color that visually relates to the content theme
+- The idea should feel like a helpful teammate's suggestion, not obvious
+- If the canvas is mostly drawings, suggest what concept or label could be added
+- If there are already text notes, suggest a related or contrasting idea
+- Same language as existing canvas content (Russian or English)
+- If you genuinely have nothing useful to add, reply {"text": "", "color": "grey"}`,
+        },
+        {
+          role: 'user',
+          content: [
+            { type: 'image_url', image_url: { url: canvasImage, detail: 'low' } },
+            { type: 'text', text: canvasContext || 'Canvas shown in image.' },
+          ],
+        },
+      ],
+      temperature: 0.8,
+      max_tokens: 100,
+    })
+
+    const content = response.choices[0]?.message?.content || ''
+    try {
+      const parsed = JSON.parse(content.replace(/```json?\s*/g, '').replace(/```/g, '').trim())
+      if (!parsed.text || parsed.text.trim() === '') return null
+      return { text: parsed.text, color: parsed.color || 'light-blue' }
+    } catch (err) {
+      console.error('[llm-suggest] Failed to parse response:', content)
+      return null
+    }
   }
 }
 

@@ -26,9 +26,25 @@ class ActionExecutor {
     this.doc = doc
     this.yStore = doc.getMap('tldraw')
     this.yChat = doc.getArray('chat')
+    this.yLog = doc.getArray('action-log')
     this.higgsClient = higgsClient
-    this.canvasImage = null // set per-request by orchestrator
-    this.canvasImageBounds = null // capture bounds from frontend
+    this.canvasImage = null
+    this.canvasImageBounds = null
+  }
+
+  /** Log AI action to shared action-log (same format as user actions) */
+  _log(action) {
+    this.yLog.push([{ user: AGENT_NAME, action, timestamp: Date.now() }])
+  }
+
+  /** Send short feedback to chat about what AI just did */
+  _feedback(text) {
+    this.yChat.push([{
+      id: `${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      user: AGENT_NAME,
+      text,
+      timestamp: Date.now(),
+    }])
   }
 
   async execute(actions) {
@@ -53,8 +69,14 @@ class ActionExecutor {
           case 'generate_image':
             await this._generateImage(action.args)
             break
+          case 'edit_text':
+            this._editText(action.args)
+            break
           case 'edit_drawing':
             await this._editDrawing(action.args)
+            break
+          case 'delete_shape':
+            this._deleteShape(action.args)
             break
           default:
             console.warn(`[executor] Unknown action: ${action.name}`)
@@ -97,12 +119,97 @@ class ActionExecutor {
       })
     })
 
+    this._log(`added note "${text}" at (${pos.x},${pos.y})`)
+    this._feedback(`Добавил заметку: "${text}"`)
     console.log(`[executor] Added idea "${text}" at (${pos.x}, ${pos.y})`)
     return id
   }
 
   _addQuestion({ text }) {
     return this._addIdea({ text: `? ${text}`, color: 'red' })
+  }
+
+  _editText({ shapeId, text }) {
+    // Try exact ID first, then with/without "shape:" prefix
+    let resolvedId = shapeId
+    let shape = this.yStore.get(resolvedId)
+
+    if (!shape && !shapeId.startsWith('shape:')) {
+      resolvedId = `shape:${shapeId}`
+      shape = this.yStore.get(resolvedId)
+    }
+
+    if (!shape && shapeId.startsWith('shape:')) {
+      resolvedId = shapeId.replace('shape:', '')
+      shape = this.yStore.get(resolvedId)
+    }
+
+    // Last resort: find by partial ID match
+    if (!shape) {
+      const bare = shapeId.replace('shape:', '')
+      this.yStore.forEach((record, key) => {
+        if (!shape && key.includes(bare)) {
+          shape = record
+          resolvedId = key
+        }
+      })
+    }
+
+    if (!shape) {
+      console.warn(`[executor] edit_text: shape ${shapeId} not found anywhere`)
+      return
+    }
+
+    const updated = JSON.parse(JSON.stringify(shape))
+    if (updated.props) {
+      if ('text' in updated.props) {
+        updated.props.text = text
+      } else if ('label' in updated.props) {
+        updated.props.label = text
+      } else {
+        updated.props.text = text
+      }
+    }
+
+    this.doc.transact(() => {
+      this.yStore.set(resolvedId, updated)
+    })
+
+    this._log(`edited text on ${resolvedId}: "${text.substring(0, 40)}"`)
+    this._feedback(`Обновил текст: "${text.substring(0, 40)}${text.length > 40 ? '...' : ''}"`)
+    console.log(`[executor] Edited text on ${resolvedId}: "${text.substring(0, 50)}"`)
+  }
+
+  _deleteShape({ shapeId }) {
+    let resolvedId = shapeId
+    let shape = this.yStore.get(resolvedId)
+    if (!shape && !shapeId.startsWith('shape:')) {
+      resolvedId = `shape:${shapeId}`
+      shape = this.yStore.get(resolvedId)
+    }
+    if (!shape) {
+      const bare = shapeId.replace('shape:', '')
+      this.yStore.forEach((record, key) => {
+        if (!shape && key.includes(bare)) {
+          shape = record
+          resolvedId = key
+        }
+      })
+    }
+    if (!shape) {
+      console.warn(`[executor] delete_shape: ${shapeId} not found`)
+      this._feedback(`Не нашёл фигуру для удаления.`)
+      return
+    }
+
+    const label = shape.props?.text || shape.props?.label || shape.type
+    this.doc.transact(() => {
+      this.yStore.delete(resolvedId)
+    })
+
+    this._log(`deleted ${shape.type} "${label}"`)
+    this._feedback(`Удалил: ${label}`)
+    console.log(`[executor] Deleted ${resolvedId}`)
   }
 
   _connectIdeas({ fromShapeId, toShapeId, label }) {
@@ -147,6 +254,8 @@ class ActionExecutor {
       })
     })
 
+    this._log(`connected ${fromShapeId} → ${toShapeId}${label ? ` label="${label}"` : ''}`)
+    this._feedback(`Соединил фигуры${label ? `: "${label}"` : ''}`)
     console.log(`[executor] Connected ${fromShapeId} → ${toShapeId}`)
   }
 
@@ -195,6 +304,8 @@ class ActionExecutor {
       })
     })
 
+    this._log(`grouped ${validShapes.length} shapes into "${groupName}"`)
+    this._feedback(`Сгруппировал ${validShapes.length} фигур: "${groupName}"`)
     console.log(`[executor] Grouped ${validShapes.length} shapes into "${groupName}"`)
   }
 
@@ -212,23 +323,23 @@ class ActionExecutor {
 
   async _generateImage({ prompt, nearShapeId, position, relative_scale }) {
     if (!this.higgsClient) {
-      this._sendMessage({ text: `I'd like to generate an image for "${prompt}" but image generation is not configured.` })
+      this._feedback(`Генерация изображений не настроена.`)
       return
     }
 
-    this._sendMessage({ text: `Generating image: "${prompt}"...` })
+    this._feedback(`Генерирую: "${prompt.substring(0, 50)}"...`)
 
     try {
       const imageUrl = await this.higgsClient.generate(prompt)
       if (!imageUrl) {
-        this._sendMessage({ text: 'Image generation failed — no URL returned.' })
+        this._feedback('Не удалось получить изображение.')
         return
       }
 
       // Download image and embed as base64 data URL (external URLs break due to CORS/expiry)
       const src = await this._downloadAsDataUrl(imageUrl)
       if (!src) {
-        this._sendMessage({ text: 'Image generation failed — could not download image.' })
+        this._feedback('Не удалось скачать изображение.')
         return
       }
 
@@ -295,20 +406,22 @@ class ActionExecutor {
         })
       })
 
+      this._log(`generated image "${prompt.substring(0, 40)}" at (${Math.round(pos.x)},${Math.round(pos.y)})`)
+      this._feedback(`Готово! Сгенерировал изображение: "${prompt.substring(0, 50)}"`)
       console.log(`[executor] Generated image "${prompt}" at (${pos.x},${pos.y}) ${imgSize}x${imgSize} (scale=${scale}, position=${position || 'default'})`)
     } catch (err) {
       console.error('[executor] Image generation error:', err.stack || err.message)
-      this._sendMessage({ text: `Image generation failed: ${err.message}` })
+      this._feedback(`Не удалось сгенерировать изображение: ${err.message}`)
     }
   }
 
   async _editDrawing({ instruction }) {
     if (!this.canvasImage) {
-      this._sendMessage({ text: 'Cannot edit drawing — no canvas screenshot available.' })
+      this._feedback('Нет скриншота canvas для редактирования.')
       return
     }
 
-    this._sendMessage({ text: `Editing your drawing: "${instruction}"...` })
+    this._feedback(`Редактирую рисунок: "${instruction.substring(0, 50)}"...`)
 
     try {
       const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
@@ -342,7 +455,7 @@ class ActionExecutor {
       }
 
       if (!src) {
-        this._sendMessage({ text: 'Drawing edit failed — no image returned.' })
+        this._feedback('Не удалось отредактировать рисунок.')
         return
       }
 
@@ -393,10 +506,12 @@ class ActionExecutor {
         })
       })
 
+      this._log(`edited drawing: "${instruction.substring(0, 40)}"`)
+      this._feedback(`Отредактировал рисунок: "${instruction.substring(0, 50)}"`)
       console.log(`[executor] Edited drawing: "${instruction}"`)
     } catch (err) {
       console.error('[executor] Drawing edit error:', err.stack || err.message)
-      this._sendMessage({ text: `Drawing edit failed: ${err.message}` })
+      this._feedback(`Не удалось отредактировать: ${err.message}`)
     }
   }
 

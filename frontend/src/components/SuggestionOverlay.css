@@ -1,0 +1,76 @@
+.suggestion-overlay {
+  position: absolute;
+  z-index: 150;
+  transform: translate(-50%, -100%);
+  pointer-events: auto;
+  animation: suggestion-fade-in 0.3s ease;
+}
+
+@keyframes suggestion-fade-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, calc(-100% + 8px));
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -100%);
+  }
+}
+
+.suggestion-pill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #1a1a35;
+  border: 1px solid rgba(124, 111, 255, 0.5);
+  border-radius: 12px;
+  padding: 6px 8px 6px 14px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5), 0 0 16px rgba(124, 111, 255, 0.2);
+  white-space: nowrap;
+  max-width: 340px;
+}
+
+.suggestion-text {
+  font-size: 13px;
+  font-weight: 500;
+  color: #e0ddff;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.suggestion-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.suggestion-btn {
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+}
+
+.suggestion-btn.accept {
+  background: rgba(76, 175, 80, 0.2);
+  color: #4caf50;
+}
+.suggestion-btn.accept:hover {
+  background: rgba(76, 175, 80, 0.45);
+  transform: scale(1.1);
+}
+
+.suggestion-btn.dismiss {
+  background: rgba(244, 67, 54, 0.2);
+  color: #f44336;
+}
+.suggestion-btn.dismiss:hover {
+  background: rgba(244, 67, 54, 0.45);
+  transform: scale(1.1);
+}

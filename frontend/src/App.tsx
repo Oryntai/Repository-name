@@ -9,11 +9,14 @@ import { useRemoteCursors } from './hooks/useRemoteCursors'
 import { useVoiceCommands } from './hooks/useVoiceCommands'
 import { usePageSizeProvider, PageSizeContext } from './hooks/usePageSize'
 import { useClampToBounds } from './hooks/useClampToBounds'
+import { useTentativeSuggestions } from './hooks/useTentativeSuggestions'
+import { useActionLog } from './hooks/useActionLog'
 import { HeaderBar } from './components/HeaderBar'
 import { LeftSidebar } from './components/LeftSidebar'
 import { DotGrid } from './components/DotGrid'
 import { CanvasToolbar } from './components/CanvasToolbar'
 import { PageMask } from './components/PageMask'
+import { SuggestionOverlay } from './components/SuggestionOverlay'
 import './App.css'
 
 function getRoomId(): string {
@@ -34,6 +37,8 @@ export default function App() {
   const voiceCmd = useVoiceCommands(doc, voice.isActive, userName, editor)
   const pageSize = usePageSizeProvider(doc)
   useClampToBounds(editor)
+  useActionLog(editor, doc, userName)
+  const suggestions = useTentativeSuggestions(editor, doc)
 
   const handleMount = useCallback((e: Editor) => {
     setEditor(e)
@@ -62,6 +67,7 @@ export default function App() {
         isListening={voiceCmd.isListening}
         isSpeaking={voiceCmd.isSpeaking}
         phase={voiceCmd.phase}
+        triggeredBy={voiceCmd.triggeredBy}
         onToggleAgent={voiceCmd.agentAwake ? voiceCmd.manualSleep : voiceCmd.manualWake}
       />
       <div className="workspace">
@@ -84,6 +90,17 @@ export default function App() {
           />
           {editor && <CanvasToolbar editor={editor} />}
           {editor && <PageMask editor={editor} />}
+          {editor && suggestions.tentative && (
+            <SuggestionOverlay
+              editor={editor}
+              shapeId={suggestions.tentative.id}
+              shapeX={suggestions.tentative.x}
+              shapeY={suggestions.tentative.y}
+              text={suggestions.tentative.text}
+              onAccept={suggestions.accept}
+              onDismiss={suggestions.dismiss}
+            />
+          )}
         </div>
       </div>
     </div>
