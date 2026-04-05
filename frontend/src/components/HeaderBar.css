@@ -249,6 +249,71 @@
   margin-left: 2px;
 }
 
+/* ---- Export ---- */
+.hdr-export {
+  position: relative;
+}
+.hdr-export-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(255,255,255,0.04);
+  color: #ccc;
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.hdr-export-btn:hover {
+  background: rgba(124,111,255,0.12);
+  border-color: rgba(124,111,255,0.3);
+  color: #b4adff;
+}
+.hdr-export-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 160px;
+  background: #1e1e3a;
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 10px;
+  padding: 4px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-4px);
+  transition: all 0.15s ease;
+  z-index: 200;
+}
+.hdr-export-menu.open {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+.hdr-export-menu button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 12px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: #ccc;
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.1s;
+}
+.hdr-export-menu button:hover {
+  background: rgba(124,111,255,0.15);
+  color: #fff;
+}
+
 /* ---- Connection ---- */
 .hdr-conn {
   display: flex;
